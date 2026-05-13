@@ -74,6 +74,93 @@ router.get('/logout', (req, res) => {
     res.redirect('/');
 });
 
+// Account Settings
+router.get('/settings/profile', (req, res) => {
+    if (!req.session.user) return res.redirect('/login');
+    res.render('account_settings', { user: req.session.user, error: req.query.error || null });
+});
+
+router.post('/settings/delete-account', async (req, res) => {
+    if (!req.session.user) return res.redirect('/login');
+    const username = req.session.user.username;
+    const { confirm_username, captcha } = req.body;
+
+    if (confirm_username !== username) {
+        return res.redirect('/settings/profile?error=Username confirmation does not match');
+    }
+
+    if (!captcha || captcha.toLowerCase() !== req.session.captcha) {
+        return res.redirect('/settings/profile?error=Invalid captcha');
+    }
+
+    try {
+        // Function to delete a repo and its data
+        const deleteRepoCompletely = async (owner, repoName) => {
+            const repoId = `${owner}_${repoName}`;
+            await db.repos.delete(repoId);
+            
+            // Delete PRs
+            const allPrs = await db.pullRequests.all();
+            const repoPrs = allPrs.filter(p => p.id.startsWith(`${owner}_${repoName}_`));
+            for (const pr of repoPrs) {
+                await db.pullRequests.delete(pr.id);
+            }
+
+            // Delete CI Runs
+            const allRuns = await db.ciRuns.all();
+            const repoRuns = allRuns.filter(run => run.value && run.value.owner === owner && run.value.repo === repoName);
+            for (const run of repoRuns) {
+                await db.ciRuns.delete(run.id);
+            }
+
+            // Delete from disk
+            const repoPath = path.join(__dirname, '..', 'repos', owner, repoName + '.git');
+            if (fs.existsSync(repoPath)) {
+                fs.rmSync(repoPath, { recursive: true, force: true });
+            }
+        };
+
+        // 1. Delete user's personal repos
+        const allRepos = await db.repos.all();
+        const userRepos = allRepos.filter(r => r.value && r.value.owner === username);
+        for (const repo of userRepos) {
+            await deleteRepoCompletely(username, repo.value.name);
+        }
+
+        // 2. Delete user's organizations and their repos
+        const allOrgs = await db.orgs.all();
+        const userOrgs = allOrgs.filter(o => o.value && o.value.owner === username);
+        for (const org of userOrgs) {
+            const orgName = org.value.name;
+            const orgRepos = allRepos.filter(r => r.value && r.value.owner === orgName);
+            for (const repo of orgRepos) {
+                await deleteRepoCompletely(orgName, repo.value.name);
+            }
+            await db.orgs.delete(orgName);
+            const orgPath = path.join(__dirname, '..', 'repos', orgName);
+            if (fs.existsSync(orgPath)) {
+                fs.rmSync(orgPath, { recursive: true, force: true });
+            }
+        }
+
+        // 3. Delete user directory
+        const userPath = path.join(__dirname, '..', 'repos', username);
+        if (fs.existsSync(userPath)) {
+            fs.rmSync(userPath, { recursive: true, force: true });
+        }
+
+        // 4. Delete user record
+        await db.users.delete(username);
+
+        // 5. Logout
+        req.session.destroy();
+        res.redirect('/');
+    } catch (err) {
+        console.error('GDPR Deletion Error:', err);
+        res.redirect('/settings/profile?error=An error occurred during account deletion');
+    }
+});
+
 // Search
 router.get('/search', async (req, res) => {
     const q = (req.query.q || '').toLowerCase();

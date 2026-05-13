@@ -9,6 +9,9 @@
             </div>
             <h2 style="margin: 0;"><%= profileUser.username %></h2>
             <p class="text-muted">NodeGit User</p>
+            <% if (user && user.username === profileUser.username) { %>
+                <a href="/settings/profile" class="btn btn-primary" style="margin-top: 16px; width: 100%; display: block; text-decoration: none; font-size: 0.9rem;">Edit Profile</a>
+            <% } %>
         </div>
     </div>
 

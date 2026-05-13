@@ -1,0 +1,46 @@
+<%- include('header') %>
+
+<div style="max-width: 600px; margin: 40px auto;">
+    <h2 style="margin-bottom: 24px;">Account Settings</h2>
+
+    <% if (error) { %>
+        <div style="background-color: var(--danger-color); color: white; padding: 10px; border-radius: 6px; margin-bottom: 16px;">
+            <%= error %>
+        </div>
+    <% } %>
+
+    <div class="card" style="border-color: var(--danger-color);">
+        <h3 style="color: var(--danger-color); margin-top: 0;">Delete Account</h3>
+        <p class="text-muted" style="margin-bottom: 20px;">
+            This action is <strong>irreversible</strong>. It will permanently delete:
+        </p>
+        <ul style="margin-bottom: 20px; color: var(--text-color);">
+            <li>Your personal user account and profile.</li>
+            <li>All repositories owned by <strong><%= user.username %></strong>.</li>
+            <li>All organizations owned by you and all their repositories.</li>
+            <li>All associated pull requests, releases, and CI data.</li>
+        </ul>
+
+        <form action="/settings/delete-account" method="POST">
+            <div class="form-group" style="margin-bottom: 16px;">
+                <label for="confirm_username">Please type <strong><%= user.username %></strong> to confirm:</label>
+                <input type="text" id="confirm_username" name="confirm_username" class="form-control" required>
+            </div>
+
+            <div class="form-group" style="margin-bottom: 20px;">
+                <label>Verification</label>
+                <div style="margin-bottom: 8px;">
+                    <img src="/captcha" alt="CAPTCHA" style="border: 1px solid var(--border-color); border-radius: 4px; display: block; background: #fff;" onclick="this.src='/captcha?'+Math.random()">
+                    <small class="text-muted" style="cursor: pointer;" onclick="document.querySelector('img[alt=\\'CAPTCHA\\']').src='/captcha?'+Math.random()">Click image to refresh</small>
+                </div>
+                <input type="text" name="captcha" class="form-control" placeholder="Enter characters above" required>
+            </div>
+
+            <button type="submit" class="btn btn-primary" style="background-color: var(--danger-color); border-color: var(--danger-color); width: 100%;">
+                Permanently Delete My Account
+            </button>
+        </form>
+    </div>
+</div>
+
+<%- include('footer') %>
