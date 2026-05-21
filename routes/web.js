@@ -372,34 +372,46 @@ const ensureRepoAccess = async (req, res, next) => {
 // View Repo
 router.get('/:owner/:repo', ensureRepoAccess, async (req, res) => {
     const { owner, repo } = req.params;
+    const { branch } = req.query;
     const repoData = req.repoData;
     
     const repoPath = path.join(__dirname, '..', 'repos', owner, repo + '.git');
     let files = [];
     let commits = [];
     let branches = [];
+    let currentBranch = '';
     
     let readmeContent = null;
     
     try {
-        const lsTree = execSync(`git ls-tree -r HEAD --name-only`, { cwd: repoPath }).toString();
-        files = lsTree.split('\n').filter(Boolean);
-        
-        const log = execSync(`git log -n 5 --oneline`, { cwd: repoPath }).toString();
-        commits = log.split('\n').filter(Boolean);
-
         const branchList = execSync(`git branch --format='%(refname:short)'`, { cwd: repoPath }).toString();
         branches = branchList.split('\n').filter(Boolean);
         
+        currentBranch = branch || '';
+        if (!currentBranch) {
+            try {
+                currentBranch = execSync(`git rev-parse --abbrev-ref HEAD`, { cwd: repoPath }).toString().trim();
+                if (currentBranch === 'HEAD') currentBranch = 'main';
+            } catch (e) {
+                currentBranch = branches[0] || 'main';
+            }
+        }
+        
+        const lsTree = execSync(`git ls-tree -r ${currentBranch} --name-only`, { cwd: repoPath }).toString();
+        files = lsTree.split('\n').filter(Boolean);
+        
+        const log = execSync(`git log -n 5 --oneline ${currentBranch}`, { cwd: repoPath }).toString();
+        commits = log.split('\n').filter(Boolean);
+
         const readmeFile = files.find(f => f.toLowerCase() === 'readme.md' || f.toLowerCase() === 'readme.txt' || f.toLowerCase() === 'readme');
         if (readmeFile) {
-            readmeContent = execSync(`git show HEAD:${readmeFile}`, { cwd: repoPath }).toString();
+            readmeContent = execSync(`git show ${currentBranch}:${readmeFile}`, { cwd: repoPath }).toString();
         }
     } catch (err) {
         commits = ['Empty repository'];
     }
     
-    res.render('repo', { repo: repoData, files, commits, branches, readmeContent, ownerIsOrg: req.ownerIsOrg });
+    res.render('repo', { repo: repoData, files, commits, branches, currentBranch, readmeContent, ownerIsOrg: req.ownerIsOrg });
 });
 
 // Fork Repo
