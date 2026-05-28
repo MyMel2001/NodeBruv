@@ -203,31 +203,7 @@ router.get('/user/:username', async (req, res) => {
         .filter(r => r && r.owner === profileUser.username)
         .filter(r => !r.isPrivate || (req.session.user && req.session.user.username === r.owner));
         
-    let profileReadmeContent = null;
-    const profileRepoPath = path.join(__dirname, '..', 'repos', username, username + '.git');
-    if (fs.existsSync(profileRepoPath)) {
-        try {
-            let currentBranch = '';
-            try {
-                currentBranch = execSync(`git rev-parse --abbrev-ref HEAD`, { cwd: profileRepoPath }).toString().trim();
-                if (currentBranch === 'HEAD') currentBranch = 'main';
-            } catch (e) {
-                const branchList = execSync(`git branch --format='%(refname:short)'`, { cwd: profileRepoPath }).toString();
-                const branches = branchList.split('\n').filter(Boolean);
-                currentBranch = branches[0] || 'main';
-            }
-            const lsTree = execSync(`git ls-tree -r ${currentBranch} --name-only`, { cwd: profileRepoPath }).toString();
-            const files = lsTree.split('\n').filter(Boolean);
-            const readmeFile = files.find(f => f.toLowerCase() === 'readme.md' || f.toLowerCase() === 'readme.txt' || f.toLowerCase() === 'readme');
-            if (readmeFile) {
-                profileReadmeContent = execSync(`git show ${currentBranch}:${readmeFile}`, { cwd: profileRepoPath }).toString();
-            }
-        } catch (err) {
-            // ignore
-        }
-    }
-
-    res.render('user', { profileUser, repos, profileReadmeContent });
+    res.render('user', { profileUser, repos });
 });
 
 // Create Organization (must be before /org/:orgname to avoid wildcard match)
@@ -333,7 +309,7 @@ router.get('/new', async (req, res) => {
 
 router.post('/new', async (req, res) => {
     if (!req.session.user) return res.redirect('/login');
-    const { targetOwner, name, isPrivate, description } = req.body;
+    const { targetOwner, name, isPrivate } = req.body;
     
     const currentUser = req.session.user.username;
     let owner = currentUser;
@@ -358,7 +334,6 @@ router.post('/new', async (req, res) => {
     const repoData = {
         owner,
         name,
-        description: description || '',
         isPrivate: isPrivate === 'on',
         createdAt: Date.now()
     };
@@ -425,7 +400,7 @@ router.get('/:owner/:repo', ensureRepoAccess, async (req, res) => {
         const lsTree = execSync(`git ls-tree -r ${currentBranch} --name-only`, { cwd: repoPath }).toString();
         files = lsTree.split('\n').filter(Boolean);
         
-        const log = execSync(`git log -n 4 --oneline ${currentBranch}`, { cwd: repoPath }).toString();
+        const log = execSync(`git log -n 5 --oneline ${currentBranch}`, { cwd: repoPath }).toString();
         commits = log.split('\n').filter(Boolean);
 
         const readmeFile = files.find(f => f.toLowerCase() === 'readme.md' || f.toLowerCase() === 'readme.txt' || f.toLowerCase() === 'readme');
@@ -503,16 +478,6 @@ router.post('/:owner/:repo/settings/privacy', ensureRepoAccess, async (req, res)
     if (!(await isRepoOwner(req, repoData))) return res.status(403).send('Forbidden');
     
     repoData.isPrivate = req.body.isPrivate === 'on';
-    await db.repos.set(`${owner}_${repo}`, repoData);
-    res.redirect(`/${owner}/${repo}/settings`);
-});
-
-router.post('/:owner/:repo/settings/metadata', ensureRepoAccess, async (req, res) => {
-    const { owner, repo } = req.params;
-    const { repoData } = req;
-    if (!(await isRepoOwner(req, repoData))) return res.status(403).send('Forbidden');
-    
-    repoData.description = req.body.description || '';
     await db.repos.set(`${owner}_${repo}`, repoData);
     res.redirect(`/${owner}/${repo}/settings`);
 });
