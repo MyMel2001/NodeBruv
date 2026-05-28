@@ -32,7 +32,7 @@ const wrapTable = (table) => ({
     get: async (key) => {
         const val = await table.get(key);
         if (typeof val === 'string' && val.includes(':')) {
-            try { return JSON.parse(decrypt(val)); } catch(e) { return null; }
+            try { return JSON.parse(decrypt(val)); } catch(e) { return val; }
         }
         return val;
     },

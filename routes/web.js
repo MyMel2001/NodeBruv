@@ -40,7 +40,7 @@ router.post('/login', async (req, res) => {
     }
 
     const user = await db.users.get(username);
-    if (user && user.passwordHash && await bcrypt.compare(password, user.passwordHash)) {
+    if (user && await bcrypt.compare(password, user.passwordHash)) {
         req.session.user = { username };
         delete req.session.captcha; // Clear captcha after success
         res.redirect('/');
