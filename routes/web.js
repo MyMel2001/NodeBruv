@@ -40,11 +40,6 @@ router.post('/login', async (req, res) => {
     }
 
     const user = await db.users.get(username);
-    console.log('[LOGIN DEBUG] username:', username);
-    console.log('[LOGIN DEBUG] user from DB:', JSON.stringify(user));
-    console.log('[LOGIN DEBUG] typeof user:', typeof user);
-    console.log('[LOGIN DEBUG] passwordHash exists:', !!(user && user.passwordHash));
-    console.log('[LOGIN DEBUG] password exists:', !!password);
     
     if (user && user.passwordHash && await bcrypt.compare(password, user.passwordHash)) {
         req.session.user = { username };
