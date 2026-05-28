@@ -1,9 +1,9 @@
 <%- include('header') %>
 
-<div style="max-width: 600px; margin: 0 auto;">
+<div style="max-width: 800px; margin: 0 auto;">
     <h2>Import repositories from GitHub</h2>
     <p class="text-muted" style="margin-bottom: 24px;">
-        Connect your GitHub account to clone your public repositories into NodeGit.
+        Connect your GitHub account to clone your repositories into NodeGit.
     </p>
 
     <% if (error) { %>
@@ -18,11 +18,90 @@
         </div>
     <% } %>
 
-    <div class="card">
-        <form action="/import" method="POST" id="import-form">
+    <!-- Tabs Container -->
+    <div style="display: flex; gap: 8px; margin-bottom: 24px; border-bottom: 1px solid var(--border-color); padding-bottom: 8px;">
+        <button class="btn" id="tab-bulk-btn" onclick="showTab('bulk')" style="font-weight: 600; background-color: var(--primary-color); color: var(--bg-color);">Bulk Mirror Import</button>
+        <button class="btn" id="tab-selective-btn" onclick="showTab('selective')" style="font-weight: 600;">Selective Import</button>
+    </div>
+
+    <!-- Tab 1: Bulk Import Container -->
+    <div id="bulk-import-container">
+        <div class="card">
+            <h3>Bulk Mirror Import</h3>
+            <p class="text-muted" style="margin-bottom: 16px;">
+                Mirror all public or private repositories from a GitHub account at once.
+            </p>
+            <form action="/import" method="POST" id="import-form">
+                <div class="form-group" style="margin-bottom: 16px;">
+                    <label for="targetOwner">Destination Owner</label>
+                    <select id="targetOwner" name="targetOwner" class="form-control" style="width: auto; min-width: 200px;">
+                        <option value="<%= user.username %>"><%= user.username %></option>
+                        <% if (typeof userOrgs !== 'undefined' && userOrgs.length > 0) { %>
+                            <optgroup label="Organizations">
+                                <% userOrgs.forEach(org => { %>
+                                    <option value="<%= org %>"><%= org %></option>
+                                </<% }); %>
+                            </optgroup>
+                        <% } %>
+                    </select>
+                    <p class="text-muted" style="font-size: 0.85rem; margin-top: 8px;">
+                        Select where the repositories will be imported to.
+                    </p>
+                </div>
+
+                <div class="form-group">
+                    <label for="githubUsername">GitHub Username or Organization</label>
+                    <input type="text" id="githubUsername" name="githubUsername" class="form-control" placeholder="e.g. google or torvalds" autofocus>
+                    <p class="text-muted" style="font-size: 0.85rem; margin-top: 8px;">
+                        Required for public repositories if no token is provided.
+                    </p>
+                </div>
+
+                <div class="form-group" style="margin-top: 24px;">
+                    <label for="githubToken">GitHub Personal Access Token (Optional for public repos)</label>
+                    <input type="password" id="githubToken" name="githubToken" class="form-control" placeholder="ghp_xxxxxxxxxxxxxxxxxxxx">
+                    <p class="text-muted" style="font-size: 0.85rem; margin-top: 8px;">
+                        Required only for <strong>private</strong> repositories or to list all your own repos.
+                    </p>
+                </div>
+
+                <hr style="margin: 24px 0; border: 0; border-top: 1px solid var(--border-color);">
+
+                <button type="submit" class="btn btn-primary" id="import-btn">Import Repositories</button>
+            </form>
+        </div>
+
+        <div class="card" style="margin-top: 24px;">
+            <h3 style="font-size: 1rem; margin-bottom: 8px;">Convert Mirrored Repositories</h3>
+            <p class="text-muted" style="font-size: 0.9rem; margin-bottom: 16px;">
+                If you no longer want your imported repositories to be mirrors of their GitHub counterparts, you can convert them to normal NodeGit repositories.
+            </p>
+            <form action="/import/convert-mirrors" method="POST">
+                <button type="submit" class="btn" style="border: 1px solid var(--border-color);">Convert All to Normal Repos</button>
+            </form>
+        </div>
+
+        <div class="card" style="margin-top: 24px; background-color: var(--bg-color); border-style: dashed;">
+            <h3 style="font-size: 1rem; margin-bottom: 8px;">How bulk mirror works</h3>
+            <p class="text-muted" style="font-size: 0.9rem;">
+                1. Provide your GitHub Personal Access Token or Username.<br>
+                2. We fetch a list of your repositories.<br>
+                3. We perform a <code>git clone --mirror</code> for each repository into your NodeGit account.<br>
+                4. Your code history and branches are preserved.
+            </p>
+        </div>
+    </div>
+
+    <!-- Tab 2: Selective Import Container -->
+    <div id="selective-import-container" style="display: none;">
+        <div class="card">
+            <h3>Fetch Repositories</h3>
+            <p class="text-muted" style="margin-bottom: 16px;">
+                List your GitHub repositories to selectively transfer them as standalone or mirrored copies.
+            </p>
             <div class="form-group" style="margin-bottom: 16px;">
-                <label for="targetOwner">Destination Owner</label>
-                <select id="targetOwner" name="targetOwner" class="form-control" style="width: auto; min-width: 200px;">
+                <label for="selTargetOwner">Destination Owner</label>
+                <select id="selTargetOwner" class="form-control" style="width: auto; min-width: 200px;">
                     <option value="<%= user.username %>"><%= user.username %></option>
                     <% if (typeof userOrgs !== 'undefined' && userOrgs.length > 0) { %>
                         <optgroup label="Organizations">
@@ -32,157 +111,352 @@
                         </optgroup>
                     <% } %>
                 </select>
-                <p class="text-muted" style="font-size: 0.85rem; margin-top: 8px;">
-                    Select where the repositories will be imported to.
-                </p>
             </div>
-
             <div class="form-group">
-                <label for="githubUsername">GitHub Username or Organization</label>
-                <input type="text" id="githubUsername" name="githubUsername" class="form-control" placeholder="e.g. google or torvalds" autofocus>
-                <p class="text-muted" style="font-size: 0.85rem; margin-top: 8px;">
-                    Required for public repositories if no token is provided.
-                </p>
+                <label for="selUsername">GitHub Username or Organization</label>
+                <input type="text" id="selUsername" class="form-control" placeholder="e.g. google or torvalds">
             </div>
-
-            <div class="form-group" style="margin-top: 24px;">
-                <label for="githubToken">GitHub Personal Access Token (Optional for public repos)</label>
-                <input type="password" id="githubToken" name="githubToken" class="form-control" placeholder="ghp_xxxxxxxxxxxxxxxxxxxx">
-                <p class="text-muted" style="font-size: 0.85rem; margin-top: 8px;">
-                    Required only for <strong>private</strong> repositories or to list all your own repos.
-                </p>
+            <div class="form-group" style="margin-top: 16px;">
+                <label for="selToken">GitHub Personal Access Token (Optional)</label>
+                <input type="password" id="selToken" class="form-control" placeholder="ghp_xxxxxxxxxxxxxxxxxxxx">
             </div>
+            <button type="button" class="btn btn-primary" style="margin-top: 16px;" id="fetch-repos-btn" onclick="fetchGithubRepos()">Fetch Repositories</button>
+        </div>
 
-            <hr style="margin: 24px 0; border: 0; border-top: 1px solid var(--border-color);">
+        <div class="card" id="repos-table-card" style="display: none; max-width: 100%; overflow-x: auto;">
+            <h3>Select Repositories</h3>
+            <div style="margin-bottom: 16px; display: flex; gap: 12px; align-items: center;">
+                <button class="btn btn-primary" onclick="batchImportSelected()">Import Selected</button>
+                <span class="text-muted" id="selected-count">0 repos selected</span>
+            </div>
+            <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 0.9rem;">
+                <thead>
+                    <tr style="border-bottom: 2px solid var(--border-color); font-weight: 600;">
+                        <th style="padding: 8px;"><input type="checkbox" id="selectAllCheckbox" onchange="toggleSelectAll(this)"></th>
+                        <th style="padding: 8px;">Name & Description</th>
+                        <th style="padding: 8px;">Size (KB)</th>
+                        <th style="padding: 8px;">Import Type</th>
+                        <th style="padding: 8px;">Action</th>
+                    </tr>
+                </thead>
+                <tbody id="repos-list-tbody">
+                </tbody>
+            </table>
+        </div>
 
-            <button type="submit" class="btn btn-primary" id="import-btn">Import Repositories</button>
-        </form>
-    </div>
-
-    <script>
-        document.getElementById('import-form').addEventListener('submit', async function(e) {
-            e.preventDefault();
-            
-            const btn = document.getElementById('import-btn');
-            const form = e.target;
-            const formData = new FormData(form);
-            const data = Object.fromEntries(formData.entries());
-            
-            btn.disabled = true;
-            btn.innerHTML = '<span class="spinner"></span> Importing...';
-            
-            // Create or clear status container
-            let statusContainer = document.getElementById('import-status');
-            if (!statusContainer) {
-                statusContainer = document.createElement('div');
-                statusContainer.id = 'import-status';
-                statusContainer.style.marginTop = '24px';
-                form.parentNode.appendChild(statusContainer);
-            }
-            statusContainer.innerHTML = '<p class="text-muted">Initializing connection...</p>';
-
-            try {
-                const response = await fetch('/import', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(data)
-                });
-
-                const reader = response.body.getReader();
-                const decoder = new TextDecoder();
-                let buffer = '';
-
-                while (true) {
-                    const { done, value } = await reader.read();
-                    if (done) break;
-                    
-                    buffer += decoder.decode(value, { stream: true });
-                    const lines = buffer.split('\n');
-                    buffer = lines.pop();
-
-                    for (const line of lines) {
-                        if (!line.trim() || line.startsWith(':')) continue;
-                        
-                        try {
-                            const update = JSON.parse(line);
-                            renderUpdate(update, statusContainer);
-                        } catch (e) {
-                            console.error('Error parsing update:', e, line);
-                        }
-                    }
-                }
-            } catch (err) {
-                statusContainer.innerHTML = `<div style="background-color: var(--danger-color); color: white; padding: 10px; border-radius: 6px;">Error: ${err.message}</div>`;
-                btn.disabled = false;
-                btn.innerHTML = 'Import Repositories';
-            }
-        });
-
-        function renderUpdate(update, container) {
-            const btn = document.getElementById('import-btn');
-            
-            if (update.status === 'fetching' || update.status === 'starting' || update.status === 'cloning' || update.status === 'skipping') {
-                let progressHtml = '';
-                if (update.total) {
-                    const percent = Math.round(((update.current || 0) / update.total) * 100);
-                    progressHtml = `
-                        <div style="width: 100%; background-color: var(--border-color); height: 8px; border-radius: 4px; margin: 12px 0; overflow: hidden;">
-                            <div style="width: ${percent}%; background-color: var(--success-color); height: 100%; transition: width 0.3s ease;"></div>
-                        </div>
-                        <p style="font-size: 0.85rem; margin-bottom: 8px;">Progress: ${update.current || 0} / ${update.total} repositories</p>
-                    `;
-                }
-                
-                container.innerHTML = `
-                    <div class="card" style="background-color: var(--bg-color); border-color: var(--border-color); padding: 16px;">
-                        <div style="display: flex; align-items: center; gap: 12px;">
-                            <span class="spinner" style="border-top-color: var(--primary-color);"></span>
-                            <strong>${update.message}</strong>
-                        </div>
-                        ${progressHtml}
-                    </div>
-                `;
-            } else if (update.status === 'done') {
-                container.innerHTML = `
-                    <div style="background-color: var(--success-color); color: white; padding: 10px; border-radius: 6px; margin-bottom: 16px;">
-                        ${update.message}
-                    </div>
-                    <p style="text-align: center; margin-top: 16px;">
-                        <a href="/" class="btn">Go to Dashboard</a>
-                    </p>
-                `;
-                btn.innerHTML = 'Import Complete';
-            } else if (update.status === 'error') {
-                container.innerHTML = `
-                    <div style="background-color: var(--danger-color); color: white; padding: 10px; border-radius: 6px;">
-                        Error: ${update.error}
-                    </div>
-                `;
-                btn.disabled = false;
-                btn.innerHTML = 'Retry Import';
-            }
-        }
-    </script>
-
-    <div class="card" style="margin-top: 24px;">
-        <h3 style="font-size: 1rem; margin-bottom: 8px;">Convert Mirrored Repositories</h3>
-        <p class="text-muted" style="font-size: 0.9rem; margin-bottom: 16px;">
-            If you no longer want your imported repositories to be mirrors of their GitHub counterparts, you can convert them to normal NodeGit repositories.
-        </p>
-        <form action="/import/convert-mirrors" method="POST">
-            <button type="submit" class="btn" style="border: 1px solid var(--border-color);">Convert All to Normal Repos</button>
-        </form>
-    </div>
-
-    <div class="card" style="margin-top: 24px; background-color: var(--bg-color); border-style: dashed;">
-        <h3 style="font-size: 1rem; margin-bottom: 8px;">How it works</h3>
-        <p class="text-muted" style="font-size: 0.9rem;">
-            1. Provide your GitHub Personal Access Token.<br>
-            2. We fetch a list of your public repositories.<br>
-            3. We perform a <code>git clone --mirror</code> for each repository into your NodeGit account.<br>
-            4. Your code history and branches are preserved.
-        </p>
+        <div id="selective-status-container" style="margin-top: 24px;"></div>
     </div>
 </div>
+
+<script>
+    function showTab(tabId) {
+        if (tabId === 'bulk') {
+            document.getElementById('bulk-import-container').style.display = 'block';
+            document.getElementById('selective-import-container').style.display = 'none';
+            document.getElementById('tab-bulk-btn').style.backgroundColor = 'var(--primary-color)';
+            document.getElementById('tab-bulk-btn').style.color = 'var(--bg-color)';
+            document.getElementById('tab-selective-btn').style.backgroundColor = '';
+            document.getElementById('tab-selective-btn').style.color = '';
+        } else {
+            document.getElementById('bulk-import-container').style.display = 'none';
+            document.getElementById('selective-import-container').style.display = 'block';
+            document.getElementById('tab-selective-btn').style.backgroundColor = 'var(--primary-color)';
+            document.getElementById('tab-selective-btn').style.color = 'var(--bg-color)';
+            document.getElementById('tab-bulk-btn').style.backgroundColor = '';
+            document.getElementById('tab-bulk-btn').style.color = '';
+        }
+    }
+
+    // Bulk Import Logic
+    document.getElementById('import-form').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        
+        const btn = document.getElementById('import-btn');
+        const form = e.target;
+        const formData = new FormData(form);
+        const data = Object.fromEntries(formData.entries());
+        
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner"></span> Importing...';
+        
+        let statusContainer = document.getElementById('import-status');
+        if (!statusContainer) {
+            statusContainer = document.createElement('div');
+            statusContainer.id = 'import-status';
+            statusContainer.style.marginTop = '24px';
+            form.parentNode.appendChild(statusContainer);
+        }
+        statusContainer.innerHTML = '<p class="text-muted">Initializing connection...</p>';
+
+        try {
+            const response = await fetch('/import', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split('\n');
+                buffer = lines.pop();
+
+                for (const line of lines) {
+                    if (!line.trim() || line.startsWith(':')) continue;
+                    
+                    try {
+                        const update = JSON.parse(line);
+                        renderUpdate(update, statusContainer);
+                    } catch (e) {
+                        console.error('Error parsing update:', e, line);
+                    }
+                }
+            }
+        } catch (err) {
+            statusContainer.innerHTML = `<div style="background-color: var(--danger-color); color: white; padding: 10px; border-radius: 6px;">Error: ${err.message}</div>`;
+            btn.disabled = false;
+            btn.innerHTML = 'Import Repositories';
+        }
+    });
+
+    function renderUpdate(update, container) {
+        const btn = document.getElementById('import-btn');
+        
+        if (update.status === 'fetching' || update.status === 'starting' || update.status === 'cloning' || update.status === 'skipping') {
+            let progressHtml = '';
+            if (update.total) {
+                const percent = Math.round(((update.current || 0) / update.total) * 100);
+                progressHtml = `
+                    <div style="width: 100%; background-color: var(--border-color); height: 8px; border-radius: 4px; margin: 12px 0; overflow: hidden;">
+                        <div style="width: ${percent}%; background-color: var(--success-color); height: 100%; transition: width 0.3s ease;"></div>
+                    </div>
+                    <p style="font-size: 0.85rem; margin-bottom: 8px;">Progress: ${update.current || 0} / ${update.total} repositories</p>
+                `;
+            }
+            
+            container.innerHTML = `
+                <div class="card" style="background-color: var(--bg-color); border-color: var(--border-color); padding: 16px;">
+                    <div style="display: flex; align-items: center; gap: 12px;">
+                        <span class="spinner" style="border-top-color: var(--primary-color);"></span>
+                        <strong>${update.message}</strong>
+                    </div>
+                    ${progressHtml}
+                </div>
+            `;
+        } else if (update.status === 'done') {
+            container.innerHTML = `
+                <div style="background-color: var(--success-color); color: white; padding: 10px; border-radius: 6px; margin-bottom: 16px;">
+                    ${update.message}
+                </div>
+                <p style="text-align: center; margin-top: 16px;">
+                    <a href="/" class="btn">Go to Dashboard</a>
+                </p>
+            `;
+            btn.innerHTML = 'Import Complete';
+        } else if (update.status === 'error') {
+            container.innerHTML = `
+                <div style="background-color: var(--danger-color); color: white; padding: 10px; border-radius: 6px;">
+                    Error: ${update.error}
+                </div>
+            `;
+            btn.disabled = false;
+            btn.innerHTML = 'Retry Import';
+        }
+    }
+
+    // Selective Import Logic
+    let fetchedRepos = [];
+
+    async function fetchGithubRepos() {
+        const btn = document.getElementById('fetch-repos-btn');
+        const username = document.getElementById('selUsername').value.trim();
+        const token = document.getElementById('selToken').value.trim();
+        const tableCard = document.getElementById('repos-table-card');
+        const tbody = document.getElementById('repos-list-tbody');
+        const statusContainer = document.getElementById('selective-status-container');
+
+        if (!username && !token) {
+            alert('GitHub Username or Token is required.');
+            return;
+        }
+
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner"></span> Fetching...';
+        tableCard.style.display = 'none';
+        statusContainer.innerHTML = '';
+
+        try {
+            const response = await fetch('/import/fetch-repos', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ githubUsername: username, githubToken: token })
+            });
+            const result = await response.json();
+            if (response.ok) {
+                fetchedRepos = result.repos;
+                tbody.innerHTML = '';
+                
+                if (fetchedRepos.length === 0) {
+                    statusContainer.innerHTML = '<div style="background-color: var(--btn-bg); padding: 10px; border-radius: 6px;">No public repositories found.</div>';
+                } else {
+                    fetchedRepos.forEach((repo, i) => {
+                        const row = document.createElement('tr');
+                        row.style.borderBottom = '1px solid var(--border-color)';
+                        row.innerHTML = `
+                            <td style="padding: 8px; vertical-align: top;">
+                                <input type="checkbox" class="repo-select-checkbox" data-index="${i}" onchange="updateSelectedCount()">
+                            </td>
+                            <td style="padding: 8px; vertical-align: top;">
+                                <strong>${repo.name}</strong> ${repo.private ? '<span style="font-size:0.75rem; border:1px solid var(--border-color); padding: 1px 4px; border-radius: 4px;">Private</span>' : ''}
+                                <div class="text-muted" style="font-size: 0.8rem; margin-top: 4px;">${repo.description || 'No description'}</div>
+                            </td>
+                            <td style="padding: 8px; vertical-align: top;">
+                                ${repo.size}
+                            </td>
+                            <td style="padding: 8px; vertical-align: top;">
+                                <select class="form-control repo-import-type" data-index="${i}" style="width: auto; padding: 2px 6px;">
+                                    <option value="standalone">Standalone</option>
+                                    <option value="mirror">Mirror</option>
+                                </select>
+                            </td>
+                            <td style="padding: 8px; vertical-align: top;" id="action-cell-${i}">
+                                <button class="btn btn-sm" onclick="importSingleRepo(${i})">Import</button>
+                            </td>
+                        `;
+                        tbody.appendChild(row);
+                    });
+                    tableCard.style.display = 'block';
+                    document.getElementById('selectAllCheckbox').checked = false;
+                    updateSelectedCount();
+                }
+            } else {
+                statusContainer.innerHTML = `<div style="background-color: var(--danger-color); color: white; padding: 10px; border-radius: 6px;">Error: ${result.error}</div>`;
+            }
+        } catch (e) {
+            statusContainer.innerHTML = `<div style="background-color: var(--danger-color); color: white; padding: 10px; border-radius: 6px;">Error: ${e.message}</div>`;
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = 'Fetch Repositories';
+        }
+    }
+
+    function toggleSelectAll(master) {
+        const checkboxes = document.querySelectorAll('.repo-select-checkbox');
+        checkboxes.forEach(cb => cb.checked = master.checked);
+        updateSelectedCount();
+    }
+
+    function updateSelectedCount() {
+        const checkboxes = document.querySelectorAll('.repo-select-checkbox:checked');
+        document.getElementById('selected-count').textContent = `${checkboxes.length} repos selected`;
+    }
+
+    async function importSingleRepo(index) {
+        const repo = fetchedRepos[index];
+        const targetOwner = document.getElementById('selTargetOwner').value;
+        const token = document.getElementById('selToken').value.trim();
+        const typeSelect = document.querySelector(`.repo-import-type[data-index="${index}"]`);
+        const importType = typeSelect.value;
+        const cell = document.getElementById(`action-cell-${index}`);
+
+        cell.innerHTML = '<span class="spinner" style="border-top-color: var(--primary-color);"></span> Importing...';
+
+        try {
+            const response = await fetch('/import/repo', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    githubToken: token,
+                    targetOwner: targetOwner,
+                    repoName: repo.name,
+                    cloneUrl: repo.clone_url,
+                    importType: importType,
+                    description: repo.description
+                })
+            });
+            const result = await response.json();
+            if (response.ok) {
+                cell.innerHTML = '<span style="color: var(--success-color); font-weight: bold;">Imported</span>';
+            } else {
+                cell.innerHTML = `<button class="btn btn-sm btn-primary" onclick="importSingleRepo(${index})">Retry</button> <span style="color: var(--danger-color); font-size: 0.8rem;">${result.error}</span>`;
+            }
+        } catch (e) {
+            cell.innerHTML = `<button class="btn btn-sm btn-primary" onclick="importSingleRepo(${index})">Retry</button> <span style="color: var(--danger-color); font-size: 0.8rem;">${e.message}</span>`;
+        }
+    }
+
+    async function batchImportSelected() {
+        const checkboxes = document.querySelectorAll('.repo-select-checkbox:checked');
+        if (checkboxes.length === 0) {
+            alert('Please select at least one repository to import.');
+            return;
+        }
+
+        const targetOwner = document.getElementById('selTargetOwner').value;
+        const token = document.getElementById('selToken').value.trim();
+        const statusContainer = document.getElementById('selective-status-container');
+
+        statusContainer.innerHTML = `
+            <div class="card" style="padding: 16px;">
+                <h4>Batch Import Progress</h4>
+                <div id="batch-progress-log" style="max-height: 200px; overflow-y: auto; font-family: monospace; font-size: 0.85rem; background: var(--bg-color); padding: 8px; border: 1px solid var(--border-color); border-radius: 4px; margin-top: 8px;">
+                </div>
+            </div>
+        `;
+        const logDiv = document.getElementById('batch-progress-log');
+        const log = (msg) => {
+            logDiv.innerHTML += `<div>${msg}</div>`;
+            logDiv.scrollTop = logDiv.scrollHeight;
+        };
+
+        for (let cb of checkboxes) {
+            const index = parseInt(cb.getAttribute('data-index'), 10);
+            const repo = fetchedRepos[index];
+            const typeSelect = document.querySelector(`.repo-import-type[data-index="${index}"]`);
+            const importType = typeSelect.value;
+            const cell = document.getElementById(`action-cell-${index}`);
+
+            log(`[INFO] Importing ${repo.name} as ${importType}...`);
+            cell.innerHTML = '<span class="spinner" style="border-top-color: var(--primary-color);"></span> Importing...';
+
+            try {
+                const response = await fetch('/import/repo', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        githubToken: token,
+                        targetOwner: targetOwner,
+                        repoName: repo.name,
+                        cloneUrl: repo.clone_url,
+                        importType: importType,
+                        description: repo.description
+                    })
+                });
+                const result = await response.json();
+                if (response.ok) {
+                    cell.innerHTML = '<span style="color: var(--success-color); font-weight: bold;">Imported</span>';
+                    cb.checked = false;
+                    log(`<span style="color: var(--success-color);">[SUCCESS] Imported ${repo.name}</span>`);
+                } else {
+                    cell.innerHTML = `<button class="btn btn-sm btn-primary" onclick="importSingleRepo(${index})">Retry</button> <span style="color: var(--danger-color); font-size: 0.8rem;">${result.error}</span>`;
+                    log(`<span style="color: var(--danger-color);">[ERROR] Failed ${repo.name}: ${result.error}</span>`);
+                }
+            } catch (e) {
+                cell.innerHTML = `<button class="btn btn-sm btn-primary" onclick="importSingleRepo(${index})">Retry</button> <span style="color: var(--danger-color); font-size: 0.8rem;">${e.message}</span>`;
+                log(`<span style="color: var(--danger-color);">[ERROR] Failed ${repo.name}: ${e.message}</span>`);
+            }
+            
+            await new Promise(r => setTimeout(r, 1000));
+        }
+        updateSelectedCount();
+        log('[INFO] Batch import completed.');
+    }
+</script>
 
 <%- include('footer') %>

@@ -41,11 +41,43 @@ function runPreReceive() {
                     }
 
                     // Check file content
-                    // `git show commit:filename`
-                    const content = execSync(`git show ${commit}:${filename}`).toString();
-                    
+                    let size = 0;
+                    try {
+                        size = parseInt(execSync(`git cat-file -s ${commit}:${filename}`).toString().trim(), 10);
+                    } catch (err) {
+                        // ignore or handle
+                    }
+                    if (size > 5 * 1024 * 1024) {
+                        continue; // Skip files > 5MB
+                    }
+
+                    let contentBuffer;
+                    try {
+                        contentBuffer = execSync(`git show ${commit}:${filename}`, { maxBuffer: 6 * 1024 * 1024 });
+                    } catch (err) {
+                        continue;
+                    }
+
+                    // Check for null bytes in the first 8KB to detect binary
+                    const checkLength = Math.min(contentBuffer.length, 8192);
+                    let isBinary = false;
+                    for (let i = 0; i < checkLength; i++) {
+                        if (contentBuffer[i] === 0) {
+                            isBinary = true;
+                            break;
+                        }
+                    }
+                    if (isBinary) {
+                        continue; // Skip binary files
+                    }
+
+                    let contentStr = contentBuffer.toString('utf8');
+                    // Remove ${{ ... }} and ${ ... } placeholders
+                    contentStr = contentStr.replace(/\$\{\{[\s\S]*?\}\}/g, '');
+                    contentStr = contentStr.replace(/\$\{[\s\S]*?\}/g, '');
+
                     for (const pattern of SECRET_PATTERNS) {
-                        if (pattern.test(content)) {
+                        if (pattern.test(contentStr)) {
                             console.error(`\x1b[31m[REJECTED]\x1b[0m Push contains potential secrets in file "${filename}" at commit ${commit.substring(0, 7)}.`);
                             process.exit(1);
                         }

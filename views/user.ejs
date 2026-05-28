@@ -17,6 +17,18 @@
 
     <!-- Main Content -->
     <div style="flex-grow: 1;">
+        <% if (profileReadmeContent) { %>
+            <div class="card" style="margin-bottom: 24px; padding: 24px;">
+                <div id="profile-readme-raw" style="display: none;"><%= profileReadmeContent %></div>
+                <div id="profile-readme-rendered" style="font-family: sans-serif; line-height: 1.6;"></div>
+                <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+                <script>
+                    const rawProfile = document.getElementById('profile-readme-raw').textContent;
+                    document.getElementById('profile-readme-rendered').innerHTML = marked.parse(rawProfile);
+                </script>
+            </div>
+        <% } %>
+
         <div style="border-bottom: 1px solid var(--border-color); margin-bottom: 24px; padding-bottom: 8px;">
             <h3 style="margin: 0;">Repositories <span style="background-color: var(--border-color); padding: 2px 8px; border-radius: 12px; font-size: 0.85rem;"><%= repos.length %></span></h3>
         </div>
@@ -34,6 +46,9 @@
                                 <h3 style="margin-top: 0; margin-bottom: 8px;">
                                     <a href="/<%= repo.owner %>/<%= repo.name %>" style="color: var(--primary-color);"><%= repo.name %></a>
                                 </h3>
+                                <% if (repo.description) { %>
+                                <p style="margin-top: 4px; margin-bottom: 6px; font-size: 0.95rem; color: var(--fg-color);"><%= repo.description %></p>
+                                <% } %>
                                 <p class="text-muted" style="font-size: 0.9rem; margin-bottom: 0;">
                                     Updated <%= new Date(repo.createdAt).toLocaleDateString() %>
                                 </p>

@@ -5,6 +5,7 @@ const http = require('http');
 const https = require('https');
 const session = require('express-session');
 const dotenv = require('dotenv');
+const { router: pagesRouter, customDomainMiddleware } = require('./routes/pages');
 
 dotenv.config();
 
@@ -12,6 +13,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Middleware
+app.use(customDomainMiddleware);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
@@ -36,6 +38,7 @@ const webRouter = require('./routes/web');
 const gitRouter = require('./routes/git-server');
 const githubImportRouter = require('./routes/github-import');
 
+app.use('/pages', pagesRouter);
 app.use('/', webRouter);
 app.use('/import', githubImportRouter);
 // The Git server handles paths like /user/repo.git

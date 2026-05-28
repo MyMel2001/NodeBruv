@@ -11,18 +11,28 @@ A professional-grade, self-hosted Git frontend built with Node.js. NodeGit provi
 - **Private Repositories**: Mark repositories as private to restrict access. Private repos return 404 to unauthorized users to prevent enumeration. Git operations on private repos require Basic Authentication.
 - **Pull Requests**: Full PR workflow including web-based diffing and merging.
 - **User Profiles & Search**: View any user's or organization's public repositories. A global search bar filters repositories, users, and organizations by name.
-- **README Rendering**: Automatically detects and renders `README.md` files on the repository code view.
+- **User Profile READMEs**: Create a repository with the same name as your username (e.g., `alice/alice`) containing a `README.md` to render a custom description card on your user profile page.
+- **Repository Descriptions**: Assign descriptions to repositories at creation or in settings, displayed across dashboards, profiles, organizations, and search results.
+- **Clean Explorer & Compact History**:
+  - File explorer lists the first 6 files by default with a "Show more" button, while always prioritizing and displaying `README` and `LICENSE` files.
+  - Branch view displays a compact history showing only the last 4 commits.
+- **GitHub Import**: Import repositories interactively from GitHub:
+  - **Bulk Mirror Import**: Mirror all repositories from a user or organization in one go.
+  - **Selective Import**: Interactively fetch GitHub repositories, choose between **Standalone** or **Mirror** import types, edit metadata, and import individual repos or run a batch-selection process with real-time logging.
+- **NodeGit Pages**: Host static websites directly from your repositories.
+  - Resolves files automatically from publishing branches (checks `gh-pages` first, then `main`, then `master`).
+  - **Path-based routing**: Websites are served at `/pages/:owner/:repo/`.
+  - **Custom Domains**: Bring-Your-Own-CNAME support by adding a `CNAME` file in the publishing branch and pointing the DNS CNAME record of your custom domain to NodeGit.
 - **Security First**:
   - **CAPTCHA**: Built-in verification for registration, login, organization creation, and repository transfers.
   - **Encryption**: Support for encryption-at-rest for database operations.
   - **HTTPS**: Native support for secure transit.
   - **Basic Auth**: Git-over-HTTP operations enforce authentication against user credentials for private repositories.
-  - **Secret Scanning**: Automatic scanning for sensitive data in your codebase.
+  - **Secret Scanning**: Automatic scanning for sensitive data in your codebase, skipping binary files, and ignoring workflow template placeholders to prevent false positives.
   - **Dependency Scanning**: Keep your project safe with automated dependency vulnerability checks.
 - **CI/CD**: Integrated GitHub Actions–compatible runner for automated job execution (Docker-ready).
 - **Themeable UI**: Beautiful, GitHub-esque light mode and a custom Lime-on-Black dark mode.
 - **Release Management**: Create and view repository tags and releases.
-- **GitHub Import**: Seamlessly import repository collections from GitHub into your personal account or an organization. Supports Personal Access Tokens (for private repos) or just a username/org name (for public repos). Features real-time streaming progress, rate-limiting, and full pagination. Mirrored repos can be converted to standalone repositories at any time.
 
 ## 🛠️ Tech Stack
 
@@ -77,6 +87,8 @@ The following environment variables can be configured in your `.env` file:
 | `PORT`              | Port the server listens on               | `3000`                      |
 | `SESSION_SECRET`    | Secret key for session management        | `super-secret-git-frontend` |
 | `DB_ENCRYPTION_KEY` | 32-character key for database encryption | `None`                      |
+| `MAIN_DOMAIN`       | The main application domain name         | `localhost`                 |
+| `PAGES_DOMAIN`      | The Pages custom domain base CNAME domain| `pages.nodegit.com`         |
 
 ## 🔒 Security
 

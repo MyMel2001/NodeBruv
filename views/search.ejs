@@ -58,6 +58,9 @@
                                 <span style="font-size: 0.8rem; padding: 2px 8px; border: 1px solid var(--border-color); border-radius: 12px; color: var(--text-muted); margin-left: 8px;">Private</span>
                             <% } %>
                         </h3>
+                        <% if (repo.description) { %>
+                        <p class="text-muted" style="margin-top: 4px; margin-bottom: 0; font-size: 0.9rem;"><%= repo.description %></p>
+                        <% } %>
                     </div>
                 <% }); %>
             </div>

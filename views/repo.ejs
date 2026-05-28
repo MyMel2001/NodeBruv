@@ -9,6 +9,9 @@
                 <%= repo.isPrivate ? 'Private' : 'Public' %>
             </span>
         </h2>
+        <% if (repo.description) { %>
+        <p class="text-muted" style="margin-top: 4px; margin-bottom: 0; font-size: 1rem;"><%= repo.description %></p>
+        <% } %>
     </div>
     <div style="display: flex; gap: 8px;">
         <button class="btn">Watch</button>
@@ -72,7 +75,21 @@
     </div>
 </div>
 
-<div class="file-explorer">
+<% 
+  let fileList = [];
+  files.forEach((file, index) => {
+      const isReadmeOrLicense = file.toLowerCase().startsWith('readme') || file.toLowerCase().startsWith('license');
+      let shouldHide = false;
+      if (files.length > 6) {
+          if (index >= 6 && !isReadmeOrLicense) {
+              shouldHide = true;
+          }
+      }
+      fileList.push({ name: file, shouldHide });
+  });
+  const hasHiddenFiles = fileList.some(f => f.shouldHide);
+%>
+<div class="file-explorer" id="fileExplorer">
     <div style="background-color: var(--bg-color); padding: 12px 16px; border-bottom: 1px solid var(--border-color);">
         <h3 style="margin-bottom: 0; font-size: 1rem;">Files</h3>
     </div>
@@ -84,14 +101,35 @@
             </p>
         </div>
     <% } else { %>
-        <% files.forEach(file => { %>
-            <div class="file-row">
+        <% fileList.forEach(file => { %>
+            <div class="file-row <%= file.shouldHide ? 'hidden-file' : '' %>" style="<%= file.shouldHide ? 'display: none;' : '' %>">
                 <span style="margin-right: 12px;">📄</span>
-                <a href="#"><%= file %></a>
+                <a href="#"><%= file.name %></a>
             </div>
         <% }); %>
+        <% if (hasHiddenFiles) { %>
+            <div id="showMoreContainer" style="padding: 12px 16px; border-top: 1px solid var(--border-color); text-align: center;">
+                <button class="btn" id="showMoreBtn" onclick="toggleFiles()">Show more</button>
+            </div>
+        <% } %>
     <% } %>
 </div>
+
+<% if (hasHiddenFiles) { %>
+<script>
+    function toggleFiles() {
+        const hiddenFiles = document.querySelectorAll('.hidden-file');
+        const showMoreBtn = document.getElementById('showMoreBtn');
+        const isCollapsed = hiddenFiles[0].style.display === 'none';
+        
+        hiddenFiles.forEach(el => {
+            el.style.display = isCollapsed ? 'flex' : 'none';
+        });
+        
+        showMoreBtn.textContent = isCollapsed ? 'Show less' : 'Show more';
+    }
+</script>
+<% } %>
 
 <% if (readmeContent) { %>
 <div class="card" style="margin-top: 24px; padding: 24px;">

@@ -28,6 +28,20 @@
 </div>
 
 <div class="card" style="margin-bottom: 24px;">
+    <h3>Repository Metadata</h3>
+    <p class="text-muted" style="margin-bottom: 16px;">
+        Update your repository's description.
+    </p>
+    <form action="/<%= repo.owner %>/<%= repo.name %>/settings/metadata" method="POST">
+        <div class="form-group" style="margin-bottom: 16px;">
+            <label for="description">Description</label>
+            <input type="text" id="description" name="description" class="form-control" placeholder="Short description of your project" value="<%= repo.description || '' %>">
+        </div>
+        <button type="submit" class="btn btn-primary">Save Changes</button>
+    </form>
+</div>
+
+<div class="card" style="margin-bottom: 24px;">
     <h3>Repository Privacy</h3>
     <p class="text-muted" style="margin-bottom: 16px;">
         Toggle the visibility of your repository. Private repositories are only visible to you.

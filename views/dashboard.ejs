@@ -22,6 +22,9 @@
                         <span class="text-muted" style="margin-left: 8px; font-size: 0.9rem;">
                             <%= repo.value.isPrivate ? 'Private' : 'Public' %>
                         </span>
+                        <% if (repo.value.description) { %>
+                        <p style="margin-top: 6px; margin-bottom: 4px; font-size: 0.95rem; color: var(--fg-color);"><%= repo.value.description %></p>
+                        <% } %>
                         <p class="text-muted" style="margin-top: 4px; font-size: 0.9rem;">
                             Created on <%= new Date(repo.value.createdAt).toLocaleDateString() %>
                         </p>
