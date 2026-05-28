@@ -5,6 +5,9 @@ const crypto = require('crypto');
 const ENCRYPTION_KEY = process.env.DB_ENCRYPTION_KEY || 'default-secret-key-32-chars-long!!'; // 32 chars
 const IV_LENGTH = 16;
 
+console.log('[DB INIT] DB_ENCRYPTION_KEY from env:', !!process.env.DB_ENCRYPTION_KEY);
+console.log('[DB INIT] ENCRYPTION_KEY length:', ENCRYPTION_KEY.length, '(must be 32 for AES-256)');
+
 function encrypt(text) {
     let iv = crypto.randomBytes(IV_LENGTH);
     let cipher = crypto.createCipheriv('aes-256-cbc', Buffer.from(ENCRYPTION_KEY), iv);
