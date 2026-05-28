@@ -12,9 +12,6 @@ const SECRET_PATTERNS = [
 const BLOCKED_FILES = ['.env', 'credentials.json', 'id_rsa', 'id_dsa'];
 
 function runPreReceive() {
-    if (process.env.NODEGIT_BYPASS_SECRETS === 'true') {
-        process.exit(0);
-    }
     // Read from stdin (oldrev newrev refname)
     const stdinBuffer = fs.readFileSync(0);
     const lines = stdinBuffer.toString().split('\n').filter(Boolean);

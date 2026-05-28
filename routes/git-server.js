@@ -96,12 +96,7 @@ scanner.runPreReceive();
         fs.writeFileSync(hookPath, hookScript, { mode: 0o755 });
     }
 
-    const env = { ...process.env };
-    if (req.query.danger === 'true') {
-        env.NODEGIT_BYPASS_SECRETS = 'true';
-    }
-
-    const git = spawn('git', ['receive-pack', '--stateless-rpc', req.repoPath], { env });
+    const git = spawn('git', ['receive-pack', '--stateless-rpc', req.repoPath]);
     
     req.pipe(git.stdin);
     git.stdout.pipe(res);

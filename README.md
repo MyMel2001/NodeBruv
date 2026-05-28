@@ -82,13 +82,13 @@ The application will be available at `http://localhost:3000` (or the port specif
 
 The following environment variables can be configured in your `.env` file:
 
-| Variable            | Description                               | Default                     |
-| ------------------- | ----------------------------------------- | --------------------------- |
-| `PORT`              | Port the server listens on                | `3000`                      |
-| `SESSION_SECRET`    | Secret key for session management         | `super-secret-git-frontend` |
-| `DB_ENCRYPTION_KEY` | 32-character key for database encryption  | `None`                      |
-| `MAIN_DOMAIN`       | The main application domain name          | `localhost`                 |
-| `PAGES_DOMAIN`      | The Pages custom domain base CNAME domain | `pages.nodegitdomain.com`   |
+| Variable            | Description                              | Default                     |
+| ------------------- | ---------------------------------------- | --------------------------- |
+| `PORT`              | Port the server listens on               | `3000`                      |
+| `SESSION_SECRET`    | Secret key for session management        | `super-secret-git-frontend` |
+| `DB_ENCRYPTION_KEY` | 32-character key for database encryption | `None`                      |
+| `MAIN_DOMAIN`       | The main application domain name         | `localhost`                 |
+| `PAGES_DOMAIN`      | The Pages custom domain base CNAME domain| `pages.nodegit.com`         |
 
 ## 🔒 Security
 
