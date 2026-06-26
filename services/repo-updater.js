@@ -34,7 +34,7 @@ function startAutoUpdater() {
                             const bruvDir = path.join(repoPath, '.bruv');
                             if (!fs.existsSync(bruvDir)) {
                                 try {
-                                    await gitToBruv.convertGitToBruv(repoPath);
+                                    gitToBruv.convertGitToBruv(repoPath);
                                     console.log(`[Repo Updater] Converted ${repo.owner}/${repo.name} to bruv`);
                                 } catch (e) {
                                     console.error(`[Repo Updater] Failed to convert ${repo.owner}/${repo.name}: ${e.message}`);
