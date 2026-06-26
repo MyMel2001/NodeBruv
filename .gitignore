@@ -1,6 +1,8 @@
 .env
 node_modules/
-nodegit.log
+nodebruv.log
 key.pem
 cert.pem
 data.sqlite
+for-reference/
+.bruvignore

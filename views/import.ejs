@@ -3,7 +3,7 @@
 <div style="max-width: 800px; margin: 0 auto;">
     <h2>Import repositories from GitHub</h2>
     <p class="text-muted" style="margin-bottom: 24px;">
-        Connect your GitHub account to clone your repositories into NodeGit.
+        Connect your GitHub account to clone your repositories into NodeBruv.
     </p>
 
     <% if (error) { %>
@@ -74,9 +74,9 @@
         <div class="card" style="margin-top: 24px;">
             <h3 style="font-size: 1rem; margin-bottom: 8px;">Convert Mirrored Repositories</h3>
             <p class="text-muted" style="font-size: 0.9rem; margin-bottom: 16px;">
-                If you no longer want your imported repositories to be mirrors of their GitHub counterparts, you can convert them to normal NodeGit repositories.
+                If you no longer want your imported repositories to be mirrors of their GitHub counterparts, you can convert them to normal NodeBruv repositories.
             </p>
-            <form action="/import/convert-mirrors" method="POST">
+            <form action="/import/convert-git-to-bruv" method="POST">
                 <button type="submit" class="btn" style="border: 1px solid var(--border-color);">Convert All to Normal Repos</button>
             </form>
         </div>
@@ -86,7 +86,7 @@
             <p class="text-muted" style="font-size: 0.9rem;">
                 1. Provide your GitHub Personal Access Token or Username.<br>
                 2. We fetch a list of your repositories.<br>
-                3. We perform a <code>git clone --mirror</code> for each repository into your NodeGit account.<br>
+                3. We perform a <code>git clone --mirror</code> for each repository into your NodeBruv account.<br>
                 4. Your code history and branches are preserved.
             </p>
         </div>

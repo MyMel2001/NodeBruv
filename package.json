@@ -1,7 +1,7 @@
 {
-  "name": "node-git-frontend",
-  "version": "1.0.0",
-  "description": "NodeJS-based Git frontend with CI/CD, E2EE, and Git hosting",
+  "name": "node-bruv-frontend",
+  "version": "2.0.0",
+  "description": "NodeJS-based bruv frontend with CI/CD, E2EE, and bruv hosting (git-free, bruv-native)",
   "main": "server.js",
   "license": "SEE LICENSE IN LICENSE",
   "scripts": {
@@ -15,9 +15,12 @@
     "ejs": "^3.1.9",
     "express": "^4.19.2",
     "express-session": "^1.18.0",
+    "ignore": "^5.3.0",
+    "minimatch": "^9.0.0",
     "node-fetch": "^2.7.0",
     "quick.db": "9.1.7",
     "svg-captcha": "^1.4.0",
+    "uuid": "^9.0.0",
     "yaml": "^2.4.1"
   }
 }

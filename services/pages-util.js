@@ -3,6 +3,8 @@ const path = require('path');
 const { execSync } = require('child_process');
 const dns = require('dns').promises;
 const db = require('../database');
+const bruvUtils = require('./bruv-utils');
+const gitToBruv = require('./git-to-bruv');
 
 const MIME_TYPES = {
     'html': 'text/html; charset=utf-8',
@@ -35,6 +37,14 @@ function getMimeType(filePath) {
 }
 
 function getPublishingBranch(repoPath) {
+    // Try bruv first
+    const bruvDir = path.join(repoPath, '.bruv');
+    if (fs.existsSync(bruvDir)) {
+        const branch = bruvUtils.getPublishingBranch(bruvDir);
+        if (branch) return branch;
+    }
+    
+    // Fallback to git
     if (!fs.existsSync(repoPath)) return null;
     try {
         const branchList = execSync(`git branch --format='%(refname:short)'`, { cwd: repoPath }).toString();
@@ -53,50 +63,55 @@ function getPathType(repoPath, branch, gitPath) {
         const type = execSync(`git cat-file -t ${branch}:${gitPath}`, { cwd: repoPath, stdio: 'pipe' }).toString().trim();
         return type; // 'blob' or 'tree'
     } catch (e) {
-        return null; // does not exist
+        return null;
     }
 }
 
 function resolveFileContent(repoPath, branch, subpath) {
-    // Normalize path and remove leading/trailing slashes
-    let cleanPath = subpath.replace(/^\/+|\/+$/g, '');
-    
-    // Prevent traversal tricks
-    if (cleanPath.includes('..')) {
+    // Try bruv first
+    const bruvDir = path.join(repoPath, '.bruv');
+    if (fs.existsSync(bruvDir)) {
+        let cleanPath = subpath.replace(/^\/+|\/+$/g, '');
+        if (cleanPath.includes('..')) return null;
+        
+        const content = bruvUtils.resolveFileContent(bruvDir, branch, cleanPath);
+        if (content) {
+            const mimeType = getMimeType(cleanPath || 'index.html');
+            return { content, mimeType };
+        }
         return null;
     }
+    
+    // Fallback to git
+    let cleanPath = subpath.replace(/^\/+|\/+$/g, '');
+    if (cleanPath.includes('..')) return null;
 
     let resolvedPath = cleanPath;
     let type = getPathType(repoPath, branch, resolvedPath);
 
-    if (resolvedPath === '') {
-        type = 'tree';
-    }
+    if (resolvedPath === '') type = 'tree';
 
     if (type === 'tree') {
-        // If it's a directory, look for index.html
         const indexPath = resolvedPath === '' ? 'index.html' : `${resolvedPath}/index.html`;
         if (getPathType(repoPath, branch, indexPath) === 'blob') {
             resolvedPath = indexPath;
             type = 'blob';
         } else {
-            // Also try index.htm
             const indexHtmPath = resolvedPath === '' ? 'index.htm' : `${resolvedPath}/index.htm`;
             if (getPathType(repoPath, branch, indexHtmPath) === 'blob') {
                 resolvedPath = indexHtmPath;
                 type = 'blob';
             } else {
-                return null; // directory listing is not supported, 404
+                return null;
             }
         }
     } else if (type === null) {
-        // Try clean URLs - check if adding .html exists as a blob
         const htmlPath = `${resolvedPath}.html`;
         if (getPathType(repoPath, branch, htmlPath) === 'blob') {
             resolvedPath = htmlPath;
             type = 'blob';
         } else {
-            return null; // not found
+            return null;
         }
     }
 
@@ -114,8 +129,7 @@ function resolveFileContent(repoPath, branch, subpath) {
 }
 
 async function verifyDnsCname(hostname) {
-    const pagesDomain = process.env.PAGES_DOMAIN || 'pages.nodegit.com';
-    // If running in development (localhost), bypass DNS CNAME validation
+    const pagesDomain = process.env.PAGES_DOMAIN || 'pages.nodebruv.com';
     if (pagesDomain.includes('localhost') || pagesDomain.includes('127.0.0.1')) {
         return true;
     }
@@ -132,20 +146,32 @@ async function resolveRepoByCustomDomain(hostname) {
     const allRepos = await db.repos.all() || [];
     for (const item of allRepos) {
         const repo = item.value;
-        const repoPath = path.join(__dirname, '..', 'repos', repo.owner, repo.name + '.git');
+        const repoPath = gitToBruv.resolveRepoPath(path.join(__dirname, '..', 'repos'), repo.owner, repo.name);
+        if (!repoPath) continue;
         
         const branch = getPublishingBranch(repoPath);
         if (!branch) continue;
 
-        try {
-            if (getPathType(repoPath, branch, 'CNAME') === 'blob') {
-                const cnameContent = execSync(`git show ${branch}:CNAME`, { cwd: repoPath }).toString().trim().toLowerCase();
-                if (cnameContent === hostname.toLowerCase()) {
-                    return { owner: repo.owner, repo: repo.name, branch, repoPath };
-                }
+        const bruvDir = path.join(repoPath, '.bruv');
+        
+        if (fs.existsSync(bruvDir)) {
+            // Check CNAME in bruv repo
+            const cnameContent = bruvUtils.getFileContent(bruvDir, branch, 'CNAME');
+            if (cnameContent && cnameContent.toString().trim().toLowerCase() === hostname.toLowerCase()) {
+                return { owner: repo.owner, repo: repo.name, branch, repoPath };
             }
-        } catch (e) {
-            // ignore
+        } else {
+            // Fallback to git
+            try {
+                if (getPathType(repoPath, branch, 'CNAME') === 'blob') {
+                    const cnameContent = execSync(`git show ${branch}:CNAME`, { cwd: repoPath }).toString().trim().toLowerCase();
+                    if (cnameContent === hostname.toLowerCase()) {
+                        return { owner: repo.owner, repo: repo.name, branch, repoPath };
+                    }
+                }
+            } catch (e) {
+                // ignore
+            }
         }
     }
     return null;
@@ -155,5 +181,6 @@ module.exports = {
     getPublishingBranch,
     resolveFileContent,
     verifyDnsCname,
-    resolveRepoByCustomDomain
+    resolveRepoByCustomDomain,
+    getMimeType
 };

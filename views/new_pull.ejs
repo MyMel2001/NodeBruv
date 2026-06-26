@@ -2,7 +2,7 @@
 
 <div style="max-width: 800px; margin: 0 auto;">
     <h2>Compare changes</h2>
-    <p class="text-muted">Choose two branches to see what's changed or to start a new pull request.</p>
+    <p class="text-muted">Choose two snapshots to see what's changed or to start a new pull request.</p>
 
     <div class="card" style="margin-top: 24px;">
         <form action="/<%= owner %>/<%= repo %>/pull/new" method="POST">
@@ -10,7 +10,7 @@
                 <div style="flex: 1;">
                     <label style="display: block; margin-bottom: 8px; font-weight: 600;">Base</label>
                     <select name="base" class="form-control">
-                        <% branches.forEach(b => { %>
+                        <% snapshots.forEach(b => { %>
                             <option value="<%= b %>" <%= b === 'main' || b === 'master' ? 'selected' : '' %>><%= b %></option>
                         <% }); %>
                     </select>
@@ -19,7 +19,7 @@
                 <div style="flex: 1;">
                     <label style="display: block; margin-bottom: 8px; font-weight: 600;">Head</label>
                     <select name="head" class="form-control">
-                        <% branches.forEach(b => { %>
+                        <% snapshots.forEach(b => { %>
                             <option value="<%= b %>"><%= b %></option>
                         <% }); %>
                     </select>

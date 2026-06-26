@@ -1,27 +1,53 @@
 const express = require('express');
 const router = express.Router();
 const path = require('path');
+const fs = require('fs');
+const bruvUtils = require('../services/bruv-utils');
 const pagesUtil = require('../services/pages-util');
+const gitToBruv = require('../services/git-to-bruv');
 
 // Path-based routing: /pages/:owner/:repo/subpath
 router.get('/:owner/:repo*', async (req, res) => {
     const parts = req.path.split('/').filter(Boolean);
     if (parts.length < 3) {
-        return res.status(404).send('NodeGit Pages path must contain both owner and repository name.');
+        return res.status(404).send('NodeBruv Pages path must contain both owner and repository name.');
     }
     
     const owner = parts[1];
     const repo = parts[2];
     const subpath = parts.slice(3).join('/');
 
-    const repoPath = path.join(__dirname, '..', 'repos', owner, repo + '.git');
-    const branch = pagesUtil.getPublishingBranch(repoPath);
-
-    if (!branch) {
-        return res.status(404).send('NodeGit Pages site not found. Make sure you have a gh-pages, main, or master branch.');
+    const repoPath = gitToBruv.resolveRepoPath(path.join(__dirname, '..', 'repos'), owner, repo);
+    if (!repoPath) {
+        return res.status(404).send('NodeBruv Pages site not found.');
     }
 
-    const file = pagesUtil.resolveFileContent(repoPath, branch, subpath);
+    const bruvDir = path.join(repoPath, '.bruv');
+    let branch = null;
+    
+    if (fs.existsSync(bruvDir)) {
+        // Use bruv snapshots
+        branch = bruvUtils.getPublishingBranch(bruvDir);
+    } else {
+        // Fallback to git
+        branch = pagesUtil.getPublishingBranch(repoPath);
+    }
+
+    if (!branch) {
+        return res.status(404).send('NodeBruv Pages site not found. Make sure you have a gh-pages, main, or master snapshot.');
+    }
+
+    let file = null;
+    if (fs.existsSync(bruvDir)) {
+        const content = bruvUtils.resolveFileContent(bruvDir, branch, subpath);
+        if (content) {
+            const mimeType = bruvUtils.getMimeType(subpath || 'index.html');
+            file = { content, mimeType };
+        }
+    } else {
+        file = pagesUtil.resolveFileContent(repoPath, branch, subpath);
+    }
+
     if (!file) {
         return res.status(404).send('404 Not Found');
     }
@@ -36,7 +62,6 @@ async function customDomainMiddleware(req, res, next) {
         const hostHeader = req.get('host') || '';
         const hostname = hostHeader.split(':')[0].toLowerCase();
 
-        // Check if the host is the main site or localhost
         const mainDomain = (process.env.MAIN_DOMAIN || 'localhost').toLowerCase();
         const isLocalhost = hostname === 'localhost' || hostname === '127.0.0.1';
         const isMainSite = hostname === mainDomain;
@@ -45,7 +70,7 @@ async function customDomainMiddleware(req, res, next) {
             return next();
         }
 
-        const pagesDomain = (process.env.PAGES_DOMAIN || 'pages.nodegit.com').toLowerCase();
+        const pagesDomain = (process.env.PAGES_DOMAIN || 'pages.nodebruv.com').toLowerCase();
         if (hostname === pagesDomain) {
             return next();
         }
@@ -65,13 +90,25 @@ async function customDomainMiddleware(req, res, next) {
         if (!resolved) {
             return res.status(404).send(`
                 <h1>404 Not Found</h1>
-                <p>NodeGit Pages site not found for custom domain <strong>${hostname}</strong>.</p>
-                <p>Make sure you have added a file named <code>CNAME</code> in your publishing branch (gh-pages, main, or master) containing <code>${hostname}</code>.</p>
+                <p>NodeBruv Pages site not found for custom domain <strong>${hostname}</strong>.</p>
+                <p>Make sure you have added a file named <code>CNAME</code> in your publishing snapshot (gh-pages, main, or master) containing <code>${hostname}</code>.</p>
             `);
         }
 
-        // Serve file from the resolved repository's branch using the full request path
-        const file = pagesUtil.resolveFileContent(resolved.repoPath, resolved.branch, req.path);
+        // Determine which method to use for file resolution
+        const resolvedPath = resolved.repoPath;
+        const bruvDir = path.join(resolvedPath, '.bruv');
+        
+        let file = null;
+        if (fs.existsSync(bruvDir)) {
+            const content = bruvUtils.resolveFileContent(bruvDir, resolved.branch, req.path);
+            if (content) {
+                file = { content, mimeType: bruvUtils.getMimeType(req.path || 'index.html') };
+            }
+        } else {
+            file = pagesUtil.resolveFileContent(resolvedPath, resolved.branch, req.path);
+        }
+        
         if (!file) {
             return res.status(404).send('404 Not Found');
         }

@@ -26,4 +26,18 @@ document.addEventListener('DOMContentLoaded', () => {
             themeToggleBtn.textContent = '☀️';
         }
     });
+
+    // Import page: bruv-specific status updater
+    const importLog = document.getElementById('import-log');
+    const importStatus = document.getElementById('import-status');
+
+    if (importLog && importStatus) {
+        window.handleImportUpdate = (data) => {
+            if (data.status === 'cloning' || data.status === 'importing') {
+                importStatus.textContent = data.message || `Converting ${data.repo} to bruv...`;
+            } else if (data.status === 'done') {
+                importStatus.textContent = data.message || `Imported as bruv repos.`;
+            }
+        };
+    }
 });
