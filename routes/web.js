@@ -448,7 +448,7 @@ router.get('/:owner/:repo', ensureRepoAccess, async (req, res) => {
     const { branch } = req.query;
     const repoData = req.repoData;
     
-    const repoPath = gitToBruv.resolveRepoPath(path.join(__dirname, '..', 'repos'), owner, repo);
+    const repoPath = await gitToBruv.resolveRepoPath(path.join(__dirname, '..', 'repos'), owner, repo);
     if (!repoPath) return res.status(404).send('Repository data not found on disk');
     
     const bruvDir = path.join(repoPath, '.bruv');
@@ -566,7 +566,7 @@ router.post('/:owner/:repo/fork', ensureRepoAccess, async (req, res) => {
             
             // Auto-convert to bruv
             try {
-                gitToBruv.convertGitToBruv(newRepoPath);
+                await gitToBruv.convertGitToBruv(newRepoPath);
                 newRepoData.format = 'bruv';
             } catch (e) {
                 // Keep as git if conversion fails
@@ -701,7 +701,7 @@ router.get('/:owner/:repo/pulls', ensureRepoAccess, async (req, res) => {
 
 router.get('/:owner/:repo/pull/new', ensureRepoAccess, async (req, res) => {
     const { owner, repo } = req.params;
-    const repoPath = gitToBruv.resolveRepoPath(path.join(__dirname, '..', 'repos'), owner, repo);
+    const repoPath = await gitToBruv.resolveRepoPath(path.join(__dirname, '..', 'repos'), owner, repo);
     if (!repoPath) return res.status(404).send('Repo not found');
     
     const bruvDir = path.join(repoPath, '.bruv');
@@ -727,7 +727,7 @@ router.post('/:owner/:repo/pull/new', ensureRepoAccess, async (req, res) => {
 
     // Try creating PR via bruv API server
     try {
-        const repoPath = gitToBruv.resolveRepoPath(path.join(__dirname, '..', 'repos'), owner, repo);
+        const repoPath = await gitToBruv.resolveRepoPath(path.join(__dirname, '..', 'repos'), owner, repo);
         if (repoPath) {
             const result = await bruvApi.prCreate(repoPath, {
                 title,
@@ -767,7 +767,7 @@ router.get('/:owner/:repo/pull/:id', ensureRepoAccess, async (req, res) => {
     const pr = await db.pullRequests.get(id);
     if (!pr) return res.status(404).send('PR not found');
 
-    const repoPath = gitToBruv.resolveRepoPath(path.join(__dirname, '..', 'repos'), owner, repo);
+    const repoPath = await gitToBruv.resolveRepoPath(path.join(__dirname, '..', 'repos'), owner, repo);
     if (!repoPath) return res.status(404).send('Repo not found');
     
     let diff = '';
@@ -786,7 +786,7 @@ router.post('/:owner/:repo/pull/:id/merge', ensureRepoAccess, async (req, res) =
     const pr = await db.pullRequests.get(id);
     if (!pr) return res.status(404).send('PR not found');
 
-    const repoPath = gitToBruv.resolveRepoPath(path.join(__dirname, '..', 'repos'), owner, repo);
+    const repoPath = await gitToBruv.resolveRepoPath(path.join(__dirname, '..', 'repos'), owner, repo);
     if (!repoPath) return res.status(404).send('Repo not found');
 
     const bruvDir = path.join(repoPath, '.bruv');
@@ -805,7 +805,7 @@ router.post('/:owner/:repo/pull/:id/merge', ensureRepoAccess, async (req, res) =
             
             // Auto-convert if not already bruv
             if (!fs.existsSync(bruvDir)) {
-                try { gitToBruv.convertGitToBruv(repoPath); } catch (e) {}
+                try { await gitToBruv.convertGitToBruv(repoPath); } catch (e) {}
             }
         } else {
             // Legacy git merge fallback
@@ -818,7 +818,7 @@ router.post('/:owner/:repo/pull/:id/merge', ensureRepoAccess, async (req, res) =
             
             // Auto-convert to bruv after merge
             if (!fs.existsSync(bruvDir)) {
-                try { gitToBruv.convertGitToBruv(repoPath); } catch (e) {}
+                try { await gitToBruv.convertGitToBruv(repoPath); } catch (e) {}
             }
         }
         
@@ -835,7 +835,7 @@ router.post('/:owner/:repo/pull/:id/merge', ensureRepoAccess, async (req, res) =
 // Releases
 router.get('/:owner/:repo/releases', ensureRepoAccess, async (req, res) => {
     const { owner, repo } = req.params;
-    const repoPath = gitToBruv.resolveRepoPath(path.join(__dirname, '..', 'repos'), owner, repo);
+    const repoPath = await gitToBruv.resolveRepoPath(path.join(__dirname, '..', 'repos'), owner, repo);
     let releases = [];
     
     if (repoPath) {
@@ -885,7 +885,7 @@ router.get('/:owner/:repo/releases/new', ensureRepoAccess, (req, res) => {
 router.post('/:owner/:repo/releases/new', ensureRepoAccess, async (req, res) => {
     const { owner, repo } = req.params;
     const { tag, title, body } = req.body;
-    const repoPath = gitToBruv.resolveRepoPath(path.join(__dirname, '..', 'repos'), owner, repo);
+    const repoPath = await gitToBruv.resolveRepoPath(path.join(__dirname, '..', 'repos'), owner, repo);
     if (!repoPath) return res.status(404).send('Repo not found');
     
     const bruvDir = path.join(repoPath, '.bruv');
@@ -908,7 +908,7 @@ router.post('/:owner/:repo/releases/new', ensureRepoAccess, async (req, res) => 
             // Auto-convert to bruv after tag if needed
             if (!fs.existsSync(bruvDir)) {
                 try {
-                    gitToBruv.convertGitToBruv(repoPath);
+                    await gitToBruv.convertGitToBruv(repoPath);
                 } catch (e) {}
             }
         }

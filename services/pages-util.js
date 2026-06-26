@@ -146,7 +146,7 @@ async function resolveRepoByCustomDomain(hostname) {
     const allRepos = await db.repos.all() || [];
     for (const item of allRepos) {
         const repo = item.value;
-        const repoPath = gitToBruv.resolveRepoPath(path.join(__dirname, '..', 'repos'), repo.owner, repo.name);
+        const repoPath = await gitToBruv.resolveRepoPath(path.join(__dirname, '..', 'repos'), repo.owner, repo.name);
         if (!repoPath) continue;
         
         const branch = getPublishingBranch(repoPath);

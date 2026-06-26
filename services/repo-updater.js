@@ -16,7 +16,7 @@ function startAutoUpdater() {
 
             for (let i = 0; i < mirroredRepos.length; i++) {
                 const repo = mirroredRepos[i].value;
-                const repoPath = gitToBruv.resolveRepoPath(path.join(__dirname, '..', 'repos'), repo.owner, repo.name);
+                const repoPath = await gitToBruv.resolveRepoPath(path.join(__dirname, '..', 'repos'), repo.owner, repo.name);
                 if (!repoPath) continue;
 
                 if (fs.existsSync(repoPath)) {
@@ -34,7 +34,7 @@ function startAutoUpdater() {
                             const bruvDir = path.join(repoPath, '.bruv');
                             if (!fs.existsSync(bruvDir)) {
                                 try {
-                                    gitToBruv.convertGitToBruv(repoPath);
+                                    await gitToBruv.convertGitToBruv(repoPath);
                                     console.log(`[Repo Updater] Converted ${repo.owner}/${repo.name} to bruv`);
                                 } catch (e) {
                                     console.error(`[Repo Updater] Failed to convert ${repo.owner}/${repo.name}: ${e.message}`);

@@ -9,7 +9,7 @@ const gitToBruv = require('./git-to-bruv');
  * Works with both bruv repos and legacy git bare repos.
  * @param {string} repoPath 
  */
-function scan(repoPath) {
+async function scan(repoPath) {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'bruv-dep-scan-'));
     
     try {
@@ -54,7 +54,7 @@ function scan(repoPath) {
                 // Auto-convert to bruv after update
                 const bruvDir = path.join(repoPath, '.bruv');
                 if (!fs.existsSync(bruvDir)) {
-                    try { gitToBruv.convertGitToBruv(repoPath); } catch (e) {}
+                    try { await gitToBruv.convertGitToBruv(repoPath); } catch (e) {}
                 }
             }
 

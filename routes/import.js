@@ -174,7 +174,7 @@ router.post('/convert-git-to-bruv', async (req, res) => {
             
             if (fs.existsSync(legacyPath) && gitToBruv.isBareGitRepo(legacyPath) && !gitToBruv.isBruvRepo(legacyPath)) {
                 try {
-                    gitToBruv.convertGitToBruv(legacyPath, {
+                    await gitToBruv.convertGitToBruv(legacyPath, {
                         isPrivate: repoData.isPrivate,
                         author: owner,
                     });

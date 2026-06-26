@@ -10,7 +10,7 @@ const gitToBruv = require('../services/git-to-bruv');
 // Middleware to find repo path and enforce security
 // Supports both /:owner/:repo.git (legacy git URLs) and /:owner/:repo (bruv-native)
 router.use('/:owner/:repo.git', async (req, res, next) => {
-    const repoPath = gitToBruv.resolveRepoPath(path.join(__dirname, '..', 'repos'), req.params.owner, req.params.repo);
+    const repoPath = await gitToBruv.resolveRepoPath(path.join(__dirname, '..', 'repos'), req.params.owner, req.params.repo);
     if (!repoPath) {
         return res.status(404).send('Repository not found');
     }

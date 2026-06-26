@@ -121,10 +121,60 @@ function _buildTreeRecursive(bruvDir, dirPath, dirMap) {
 }
 
 /**
+ * Spawn `git cat-file -p <hash>` with streaming to avoid ENOBUFS on large blobs.
+ * Returns a Promise that resolves with the full Buffer content.
+ */
+function spawnGitCatFile(gitHash, cwd) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    const proc = spawn('git', ['cat-file', '-p', gitHash], { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
+    
+    proc.stdout.on('data', (chunk) => {
+      chunks.push(chunk);
+    });
+    
+    proc.on('close', (code) => {
+      if (code === 0) {
+        resolve(Buffer.concat(chunks));
+      } else {
+        reject(new Error(`git cat-file -p ${shortHash(gitHash)} exited with code ${code}`));
+      }
+    });
+    
+    proc.on('error', reject);
+  });
+}
+
+/**
+ * Spawn `git cat-file -t <hash>` to get the type of a git object.
+ * Returns a Promise that resolves with the type string.
+ */
+function spawnGitCatFileType(gitHash, cwd) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    const proc = spawn('git', ['cat-file', '-t', gitHash], { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
+    
+    proc.stdout.on('data', (chunk) => {
+      chunks.push(chunk);
+    });
+    
+    proc.on('close', (code) => {
+      if (code === 0) {
+        resolve(Buffer.concat(chunks).toString().trim());
+      } else {
+        reject(new Error(`git cat-file -t ${shortHash(gitHash)} exited with code ${code}`));
+      }
+    });
+    
+    proc.on('error', reject);
+  });
+}
+
+/**
  * Read all blobs from a git bare repo and write them as bruv blobs.
  * Returns a Map of git-blob-hash -> bruv-blob-hash.
  */
-function convertGitObjectsToBruv(bareGitPath, bruvDir) {
+async function convertGitObjectsToBruv(bareGitPath, bruvDir) {
   const gitObjectDir = path.join(bareGitPath, 'objects');
   const blobHashMap = new Map(); // gitHash -> bruvHash
 
@@ -150,21 +200,27 @@ function convertGitObjectsToBruv(bareGitPath, bruvDir) {
     const files = fs.readdirSync(twoHexDir);
     for (const file of files) {
       const gitHash = path.basename(twoHexDir) + file;
-      try {
-        // Use git cat-file to read the object
-        const type = execSync(`git cat-file -t ${gitHash}`, { cwd: bareGitPath, stdio: 'pipe' }).toString().trim();
-        if (type === 'blob') {
-          const content = execSync(`git cat-file -p ${gitHash}`, { cwd: bareGitPath, stdio: 'pipe', maxBuffer: 100 * 1024 * 1024 });
-          const bruvHash = writeBruvObject(bruvDir, 'blob', content);
-          blobHashMap.set(gitHash, bruvHash);
-        }
-      } catch (e) {
-        // Skip corrupted or unreachable objects
-      }
+      // We'll collect promises and await them all
+      promises.push(
+        (async () => {
+          try {
+            const type = await spawnGitCatFileType(gitHash, bareGitPath);
+            if (type === 'blob') {
+              const content = await spawnGitCatFile(gitHash, bareGitPath);
+              const bruvHash = writeBruvObject(bruvDir, 'blob', content);
+              blobHashMap.set(gitHash, bruvHash);
+            }
+          } catch (e) {
+            // Skip corrupted or unreachable objects
+          }
+        })()
+      );
     }
   }
 
+  const promises = [];
   walkObjects(gitObjectDir);
+  await Promise.all(promises);
   return blobHashMap;
 }
 
@@ -180,7 +236,7 @@ function convertGitObjectsToBruv(bareGitPath, bruvDir) {
  * 5. Create HEAD pointing to the main/default snapshot
  * 6. Keep the git objects around for reference (they can coexist)
  */
-function convertGitToBruv(bareGitPath, options = {}) {
+async function convertGitToBruv(bareGitPath, options = {}) {
   const bruvDir = path.join(bareGitPath, '.bruv');
   
   if (isBruvRepo(bareGitPath)) {
@@ -267,7 +323,7 @@ function convertGitToBruv(bareGitPath, options = {}) {
   const commitQueue = Array.from(allCommitHashes);
   const author = options.author || 'bruv-converter';
 
-  function convertCommit(gitHash) {
+  async function convertCommit(gitHash) {
     if (commitHashMap.has(gitHash)) return commitHashMap.get(gitHash);
 
     // Read git commit
@@ -283,13 +339,17 @@ function convertGitToBruv(bareGitPath, options = {}) {
 
       // Convert tree
       if (!treeHashMap.has(gitTreeHash)) {
-        const bruvTreeHash = convertGitTree(gitTreeHash, bruvDir, bareGitPath);
+        const bruvTreeHash = await convertGitTree(gitTreeHash, bruvDir, bareGitPath);
         treeHashMap.set(gitTreeHash, bruvTreeHash);
       }
       const bruvTreeHash = treeHashMap.get(gitTreeHash);
 
       // Convert parent commits first
-      const bruvParents = parentHashes.map(ph => convertCommit(ph)).filter(Boolean);
+      const bruvParents = [];
+      for (const ph of parentHashes) {
+        const converted = await convertCommit(ph);
+        if (converted) bruvParents.push(converted);
+      }
 
       // Write bruv commit
       const commitObj = JSON.stringify({
@@ -309,7 +369,7 @@ function convertGitToBruv(bareGitPath, options = {}) {
     }
   }
 
-  function convertGitTree(gitTreeHash, bruvDir, bareGitPath) {
+  async function convertGitTree(gitTreeHash, bruvDir, bareGitPath) {
     try {
       const lsTree = execSync(`git ls-tree ${gitTreeHash}`, { cwd: bareGitPath, stdio: 'pipe', maxBuffer: 10 * 1024 * 1024 }).toString();
       const entries = lsTree.split('\n').filter(Boolean).map(line => {
@@ -326,14 +386,15 @@ function convertGitToBruv(bareGitPath, options = {}) {
       for (const entry of entries) {
         if (entry.type === 'blob') {
           try {
-            const content = execSync(`git cat-file -p ${entry.objectHash}`, { cwd: bareGitPath, stdio: 'pipe', maxBuffer: 10 * 1024 * 1024 });
+            // Use spawn with streaming to avoid ENOBUFS on large blobs
+            const content = await spawnGitCatFile(entry.objectHash, bareGitPath);
             const bruvBlobHash = writeBruvObject(bruvDir, 'blob', content);
             bruvEntries.push({ name: entry.name, type: 'blob', hash: bruvBlobHash });
           } catch (e) {
             console.error(`[git-to-bruv] Skipping blob ${shortHash(entry.objectHash)} (${entry.name}): ${e.message}`);
           }
         } else if (entry.type === 'tree') {
-          const subTreeHash = convertGitTree(entry.objectHash, bruvDir, bareGitPath);
+          const subTreeHash = await convertGitTree(entry.objectHash, bruvDir, bareGitPath);
           if (subTreeHash) {
             bruvEntries.push({ name: entry.name, type: 'tree', hash: subTreeHash });
           }
@@ -353,7 +414,7 @@ function convertGitToBruv(bareGitPath, options = {}) {
   // Convert all commits
   console.log(`[git-to-bruv] Converting ${allCommitHashes.size} commits...`);
   for (const gitHash of allCommitHashes) {
-    convertCommit(gitHash);
+    await convertCommit(gitHash);
   }
 
   // Convert branches to snapshots
@@ -451,7 +512,7 @@ function cloneAndConvert(cloneUrl, destPath, options = {}) {
     let stderr = '';
     git.stderr.on('data', d => { stderr += d.toString(); });
     
-    git.on('close', (code) => {
+    git.on('close', async (code) => {
       if (code !== 0) {
         // Cleanup temp
         if (fs.existsSync(tmpDir)) fs.rmSync(tmpDir, { recursive: true, force: true });
@@ -460,7 +521,7 @@ function cloneAndConvert(cloneUrl, destPath, options = {}) {
 
       try {
         // Convert the bare clone to bruv
-        const result = convertGitToBruv(tmpDir, options);
+        const result = await convertGitToBruv(tmpDir, options);
         
         // Move to final destination
         if (fs.existsSync(destPath)) {
@@ -570,13 +631,13 @@ function createNewBruvRepo(repoPath, options = {}) {
  * Scan for existing bare git repos and auto-convert them to bruv.
  * Called at server startup.
  */
-function autoConvertExisting(reposDir) {
+async function autoConvertExisting(reposDir) {
   if (!fs.existsSync(reposDir)) return { converted: 0, skipped: 0 };
   
   let converted = 0;
   let skipped = 0;
   
-  function walk(dir) {
+  async function walk(dir) {
     if (!fs.existsSync(dir)) return;
     const entries = fs.readdirSync(dir, { withFileTypes: true });
     for (const entry of entries) {
@@ -586,7 +647,7 @@ function autoConvertExisting(reposDir) {
           // Found a bare git repo
           if (!isBruvRepo(full)) {
             try {
-              convertGitToBruv(full);
+              await convertGitToBruv(full);
               converted++;
             } catch (e) {
               console.error(`[git-to-bruv] Failed to convert ${full}: ${e.message}`);
@@ -600,13 +661,13 @@ function autoConvertExisting(reposDir) {
           skipped++;
         } else {
           // Recurse into owner directories
-          walk(full);
+          await walk(full);
         }
       }
     }
   }
   
-  walk(reposDir);
+  await walk(reposDir);
   return { converted, skipped };
 }
 
@@ -614,7 +675,7 @@ function autoConvertExisting(reposDir) {
  * Resolve repository path regardless of storage format.
  * Returns the repo root directory (where .bruv/ lives).
  */
-function resolveRepoPath(reposBaseDir, owner, repoName) {
+async function resolveRepoPath(reposBaseDir, owner, repoName) {
   // Try .bruv first (bruv-native)
   let bruvPath = path.join(reposBaseDir, owner, repoName + '.bruv');
   if (fs.existsSync(bruvPath) && isBruvRepo(bruvPath)) {
@@ -626,7 +687,7 @@ function resolveRepoPath(reposBaseDir, owner, repoName) {
   if (fs.existsSync(gitPath) && isBareGitRepo(gitPath)) {
     console.log(`[git-to-bruv] Auto-converting legacy git repo: ${owner}/${repoName}`);
     try {
-      convertGitToBruv(gitPath);
+      await convertGitToBruv(gitPath);
       return gitPath; // Now has .bruv/ too
     } catch (e) {
       console.error(`[git-to-bruv] Auto-conversion failed: ${e.message}`);

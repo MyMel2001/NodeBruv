@@ -49,8 +49,10 @@ app.use('/', bruvRouter);
 const gitToBruv = require('./services/git-to-bruv');
 const reposDir = path.join(__dirname, 'repos');
 if (fs.existsSync(reposDir)) {
-    const result = gitToBruv.autoConvertExisting(reposDir);
-    console.log(`[startup] Auto-converted ${result.converted} git repos to bruv, skipped ${result.skipped}`);
+    (async () => {
+        const result = await gitToBruv.autoConvertExisting(reposDir);
+        console.log(`[startup] Auto-converted ${result.converted} git repos to bruv, skipped ${result.skipped}`);
+    })();
 }
 
 // Start background services
