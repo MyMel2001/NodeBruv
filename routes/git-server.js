@@ -4,6 +4,7 @@ const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
 const secretScanner = require('../services/secret-scanner');
+const bruvApi = require('../services/bruv-api');
 
 // Middleware to find repo path and enforce security
 router.use('/:owner/:repo.git', async (req, res, next) => {
@@ -15,7 +16,6 @@ router.use('/:owner/:repo.git', async (req, res, next) => {
 
     const { owner, repo } = req.params;
     const db = require('../database');
-    const bcrypt = require('bcrypt');
     const repoData = await db.repos.get(`${owner}_${repo}`);
     
     const isPush = req.query.service === 'git-receive-pack' || req.path.endsWith('git-receive-pack');
@@ -34,8 +34,11 @@ router.use('/:owner/:repo.git', async (req, res, next) => {
     const credentials = Buffer.from(authHeader.split(' ')[1], 'base64').toString('ascii');
     const [username, password] = credentials.split(':');
 
-    const user = await db.users.get(username);
-    if (!user || !(await bcrypt.compare(password, user.passwordHash))) {
+    // Authenticate via bruv API server
+    try {
+        await bruvApi.login(username, password);
+    } catch (err) {
+        console.warn('[bruv-api] git-server auth failed:', err.message);
         res.setHeader('WWW-Authenticate', 'Basic realm="NodeGit"');
         return res.status(401).send('Unauthorized');
     }

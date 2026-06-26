@@ -1,7 +1,6 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../database');
-const bcrypt = require('bcrypt');
 const fs = require('fs');
 const path = require('path');
 const svgCaptcha = require('svg-captcha');
@@ -42,13 +41,14 @@ router.post('/login', async (req, res) => {
         return res.render('login', { error: 'Invalid captcha' });
     }
 
-    const user = await db.users.get(username);
-    
-    if (user && user.passwordHash && await bcrypt.compare(password, user.passwordHash)) {
-        req.session.user = { username };
+    try {
+        // Authenticate via bruv API server
+        const result = await bruvApi.login(username, password);
+        req.session.user = { username, token: result.token };
         delete req.session.captcha;
         res.redirect('/');
-    } else {
+    } catch (err) {
+        console.warn('[bruv-api] login failed:', err.message);
         res.render('login', { error: 'Invalid credentials' });
     }
 });
@@ -62,14 +62,23 @@ router.post('/register', async (req, res) => {
         return res.render('register', { error: 'Invalid captcha' });
     }
 
-    if (await db.users.get(username) || await db.orgs.get(username)) {
+    if (await db.orgs.get(username)) {
         return res.render('register', { error: 'Username taken' });
     }
-    const passwordHash = await bcrypt.hash(password, 10);
-    await db.users.set(username, { username, passwordHash });
-    req.session.user = { username };
-    delete req.session.captcha;
-    res.redirect('/');
+
+    try {
+        // Register via bruv API server (handles user storage & duplicate check)
+        const result = await bruvApi.register(username, password, '');
+        req.session.user = { username, token: result.token };
+        delete req.session.captcha;
+        res.redirect('/');
+    } catch (err) {
+        console.warn('[bruv-api] register failed:', err.message);
+        if (err.message.includes('already exists')) {
+            return res.render('register', { error: 'Username taken' });
+        }
+        res.render('register', { error: 'Registration failed: ' + err.message });
+    }
 });
 
 // Logout
