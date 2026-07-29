@@ -1,315 +1,332 @@
 /**
  * bruv utility service for NodeBruv Frontend.
  * Provides read-only access to bruv repos for web display purposes.
- * 
- * This is analogous to the old git commands in routes/web.js and routes/pages.js.
- * Instead of spawning git, we read bruv objects directly.
+ *
+ * Uses the actual bruv library from ../bruv/src instead of custom stubs.
  */
 
-const fs = require('fs');
 const path = require('path');
-const crypto = require('crypto');
+const fs = require('fs');
+
+// Import bruv library directly
+const BruvObjects = require('../../bruv/src/core/objects');
+const SnapshotManager = require('../../bruv/src/snapshot/manager');
+const { shortHash } = require('../../bruv/src/utils/hash');
 const { execSync } = require('child_process');
 
-function hashBuffer(buf) {
-  return crypto.createHash('sha256').update(buf).digest('hex');
-}
+const MIME_TYPES = {
+    'html': 'text/html; charset=utf-8',
+    'htm': 'text/html; charset=utf-8',
+    'css': 'text/css; charset=utf-8',
+    'js': 'application/javascript; charset=utf-8',
+    'mjs': 'application/javascript; charset=utf-8',
+    'json': 'application/json; charset=utf-8',
+    'svg': 'image/svg+xml; charset=utf-8',
+    'png': 'image/png',
+    'jpg': 'image/jpeg',
+    'jpeg': 'image/jpeg',
+    'gif': 'image/gif',
+    'ico': 'image/x-icon',
+    'txt': 'text/plain; charset=utf-8',
+    'md': 'text/markdown; charset=utf-8',
+    'pdf': 'application/pdf',
+    'xml': 'application/xml; charset=utf-8',
+    'webp': 'image/webp',
+    'woff': 'font/woff',
+    'woff2': 'font/woff2',
+    'ttf': 'font/ttf',
+    'eot': 'application/vnd.ms-fontobject',
+    'otf': 'font/otf',
+};
 
-function shortHash(fullHash) {
-  return fullHash.slice(0, 7);
-}
-
-/**
- * Read a bruv object from the object store.
- */
-function readBruvObject(bruvDir, hash) {
-  const objPath = path.join(bruvDir, 'objects', hash.slice(0, 2), hash.slice(2));
-  if (!fs.existsSync(objPath)) return null;
-  const buf = fs.readFileSync(objPath);
-  const nullIdx = buf.indexOf(0);
-  if (nullIdx === -1) return null;
-  const type = buf.slice(0, nullIdx).toString('utf8');
-  const content = buf.slice(nullIdx + 1);
-  return { type, content };
-}
-
-/**
- * Read a bruv commit.
- */
-function readBruvCommit(bruvDir, hash) {
-  const obj = readBruvObject(bruvDir, hash);
-  if (!obj || obj.type !== 'commit') return null;
-  try {
-    return JSON.parse(obj.content.toString('utf8'));
-  } catch {
-    return null;
-  }
+function getMimeType(filePath) {
+    const ext = path.extname(filePath).toLowerCase().replace(/^\./, '');
+    return MIME_TYPES[ext] || 'application/octet-stream';
 }
 
 /**
- * Read a bruv tree (list of entries).
+ * Get a BruvObjects instance for a bruv directory.
+ * bruvDir is the path to the directory containing .bruv/ (i.e. the repo root).
+ * For backwards compatibility, bruvDir may be the .bruv/ dir itself — we normalise it.
  */
-function readBruvTree(bruvDir, hash) {
-  const obj = readBruvObject(bruvDir, hash);
-  if (!obj || obj.type !== 'tree') return [];
-  const lines = obj.content.toString('utf8').trim().split('\n').filter(Boolean);
-  return lines.map(line => {
-    const [type, hash, ...nameParts] = line.split(' ');
-    return { type, hash, name: nameParts.join(' ') };
-  });
+function _getObjects(bruvDir) {
+    // bruvDir may be passed as either the repo root (containing .bruv/) or the .bruv/ itself.
+    // BruvObjects constructor expects the repo root.
+    const repoPath = bruvDir.endsWith('/.bruv') || bruvDir.endsWith('\\.bruv')
+        ? path.dirname(bruvDir)
+        : path.join(bruvDir, '.bruv') === bruvDir
+            ? path.dirname(bruvDir)
+            : bruvDir;
+
+    // Detect if bruvDir IS the .bruv dir
+    const hasBruvSubdir = fs.existsSync(path.join(bruvDir, '.bruv'));
+    const isBruvDir = path.basename(bruvDir) === '.bruv';
+
+    if (isBruvDir) {
+        return new BruvObjects(path.dirname(bruvDir));
+    }
+    return new BruvObjects(bruvDir);
 }
 
-/**
- * Read a bruv blob (file content).
- */
-function readBruvBlob(bruvDir, hash) {
-  const obj = readBruvObject(bruvDir, hash);
-  if (!obj || obj.type !== 'blob') return null;
-  return obj.content;
-}
-
-/**
- * Read a bruv snapshot.
- */
-function readBruvSnapshot(bruvDir, name) {
-  const refPath = path.join(bruvDir, 'refs', 'snapshots', name);
-  if (!fs.existsSync(refPath)) return null;
-  const [commitHash, snapHash] = fs.readFileSync(refPath, 'utf8').trim().split('\n');
-  const commit = readBruvCommit(bruvDir, commitHash);
-  const snapObj = readBruvObject(bruvDir, snapHash);
-  if (!commit || !snapObj || snapObj.type !== 'snapshot') return null;
-  try {
-    const snap = JSON.parse(snapObj.content.toString('utf8'));
-    return { ...snap, commitHash, commit };
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Resolve HEAD to get the current snapshot.
- */
-function resolveHead(bruvDir) {
-  const headPath = path.join(bruvDir, 'HEAD');
-  if (!fs.existsSync(headPath)) return null;
-  const content = fs.readFileSync(headPath, 'utf8').trim();
-  const [type, name] = content.split(': ');
-  
-  if (type === 'snapshot') {
-    return readBruvSnapshot(bruvDir, name);
-  }
-  return null;
+function _getSnapshotManager(bruvDir) {
+    const isBruvDir = path.basename(bruvDir) === '.bruv';
+    if (isBruvDir) {
+        return new SnapshotManager(path.dirname(bruvDir));
+    }
+    return new SnapshotManager(bruvDir);
 }
 
 /**
  * List all snapshots (equivalent to git branches).
+ * @param {string} bruvDir - repo root or .bruv dir
  */
 function listSnapshots(bruvDir) {
-  const snapDir = path.join(bruvDir, 'refs', 'snapshots');
-  if (!fs.existsSync(snapDir)) return [];
-  return fs.readdirSync(snapDir).filter(f => !f.startsWith('.'));
+    try {
+        const objects = _getObjects(bruvDir);
+        return objects.listSnapshots();
+    } catch (e) {
+        return [];
+    }
 }
 
 /**
  * List all tags.
  */
 function listTags(bruvDir) {
-  const tagsDir = path.join(bruvDir, 'refs', 'tags');
-  if (!fs.existsSync(tagsDir)) return [];
-  return fs.readdirSync(tagsDir).filter(f => !f.startsWith('.'));
+    try {
+        const objects = _getObjects(bruvDir);
+        return objects.listTags();
+    } catch (e) {
+        return [];
+    }
+}
+
+/**
+ * Read a bruv snapshot by name.
+ * Returns snapshot data with .commitHash and .commit fields.
+ */
+function readBruvSnapshot(bruvDir, name) {
+    try {
+        const objects = _getObjects(bruvDir);
+        return objects.readSnapshot(name);
+    } catch (e) {
+        return null;
+    }
+}
+
+/**
+ * Resolve HEAD to get the current snapshot.
+ */
+function resolveHead(bruvDir) {
+    try {
+        const objects = _getObjects(bruvDir);
+        return objects.resolveHead();
+    } catch (e) {
+        return null;
+    }
 }
 
 /**
  * Get commit history starting from a commit hash.
  */
 function getCommitHistory(bruvDir, startHash, maxCount = 50) {
-  const history = [];
-  const visited = new Set();
-  const queue = [startHash];
-  
-  while (queue.length > 0 && history.length < maxCount) {
-    const hash = queue.shift();
-    if (visited.has(hash)) continue;
-    visited.add(hash);
-    
-    const commit = readBruvCommit(bruvDir, hash);
-    if (!commit) continue;
-    
-    history.push({ hash, ...commit });
-    
-    for (const parentHash of commit.parents || []) {
-      if (!visited.has(parentHash)) {
-        queue.push(parentHash);
-      }
+    try {
+        const objects = _getObjects(bruvDir);
+        return objects.getCommitHistory(startHash, maxCount);
+    } catch (e) {
+        return [];
     }
-  }
-  
-  return history;
 }
 
 /**
  * Flatten a tree to get all file paths with their blob hashes.
+ * Returns a Map<string, {hash: string}>.
  */
 function flattenTree(bruvDir, treeHash, prefix = '') {
-  const result = new Map();
-  const entries = readBruvTree(bruvDir, treeHash);
-  
-  for (const entry of entries) {
-    const fullPath = prefix ? `${prefix}/${entry.name}` : entry.name;
-    if (entry.type === 'tree') {
-      const subMap = flattenTree(bruvDir, entry.hash, fullPath);
-      for (const [p, info] of subMap) {
-        result.set(p, info);
-      }
-    } else {
-      result.set(fullPath, { hash: entry.hash });
+    try {
+        const objects = _getObjects(bruvDir);
+        return _flattenTreeRecursive(objects, treeHash, prefix);
+    } catch (e) {
+        return new Map();
     }
-  }
-  return result;
+}
+
+function _flattenTreeRecursive(objects, treeHash, prefix) {
+    const result = new Map();
+    const entries = objects.readTree(treeHash);
+    if (!entries) return result;
+
+    for (const entry of entries) {
+        const fullPath = prefix ? `${prefix}/${entry.name}` : entry.name;
+        if (entry.type === 'tree') {
+            const subMap = _flattenTreeRecursive(objects, entry.hash, fullPath);
+            for (const [p, info] of subMap) {
+                result.set(p, info);
+            }
+        } else {
+            result.set(fullPath, { hash: entry.hash });
+        }
+    }
+    return result;
 }
 
 /**
- * Get a file from a specific snapshot (or branch).
- * If snapshotName is null, uses HEAD.
+ * Read a blob's content by hash.
+ */
+function readBruvBlob(bruvDir, hash) {
+    try {
+        const objects = _getObjects(bruvDir);
+        return objects.readBlob(hash);
+    } catch (e) {
+        return null;
+    }
+}
+
+/**
+ * Get a file from a specific snapshot (or HEAD).
  */
 function getFileContent(bruvDir, snapshotName, filePath) {
-  let snap;
-  if (snapshotName) {
-    snap = readBruvSnapshot(bruvDir, snapshotName);
-  } else {
-    snap = resolveHead(bruvDir);
-  }
-  
-  if (!snap || !snap.commit || !snap.commit.tree) return null;
-  
-  const treeHash = snap.commit.tree;
-  const parts = filePath.split('/').filter(Boolean);
-  return _resolveTreePath(bruvDir, treeHash, parts);
-}
+    try {
+        const objects = _getObjects(bruvDir);
+        let snap;
+        if (snapshotName) {
+            snap = objects.readSnapshot(snapshotName);
+        } else {
+            snap = objects.resolveHead();
+        }
+        if (!snap || !snap.commit || !snap.commit.tree) return null;
 
-/**
- * Resolve a path within a tree to get blob content.
- */
-function _resolveTreePath(bruvDir, treeHash, pathParts) {
-  if (pathParts.length === 0) return null;
-  
-  const entries = readBruvTree(bruvDir, treeHash);
-  const [current, ...rest] = pathParts;
-  
-  for (const entry of entries) {
-    if (entry.name === current) {
-      if (rest.length === 0 && entry.type === 'blob') {
-        return readBruvBlob(bruvDir, entry.hash);
-      } else if (rest.length === 0 && entry.type === 'tree') {
-        return null; // It's a directory
-      } else if (rest.length > 0 && entry.type === 'tree') {
-        return _resolveTreePath(bruvDir, entry.hash, rest);
-      }
+        const treeHash = snap.commit.tree;
+        const parts = filePath.split('/').filter(Boolean);
+        return _resolveTreePath(objects, treeHash, parts);
+    } catch (e) {
+        return null;
     }
-  }
-  return null;
+}
+
+function _resolveTreePath(objects, treeHash, pathParts) {
+    if (pathParts.length === 0) return null;
+    const entries = objects.readTree(treeHash);
+    if (!entries) return null;
+    const [current, ...rest] = pathParts;
+    for (const entry of entries) {
+        if (entry.name === current) {
+            if (rest.length === 0 && entry.type === 'blob') {
+                return objects.readBlob(entry.hash);
+            } else if (rest.length === 0 && entry.type === 'tree') {
+                return null; // It's a directory
+            } else if (rest.length > 0 && entry.type === 'tree') {
+                return _resolveTreePath(objects, entry.hash, rest);
+            }
+        }
+    }
+    return null;
 }
 
 /**
- * Get publishing branch for pages (equivalent of getPublishingBranch in pages-util).
+ * Get publishing branch for pages.
  * Checks 'gh-pages' first, then 'main', then 'master'.
  */
 function getPublishingBranch(bruvDir) {
-  if (!fs.existsSync(bruvDir)) return null;
-  const snapshots = listSnapshots(bruvDir);
-  if (snapshots.includes('gh-pages')) return 'gh-pages';
-  if (snapshots.includes('main')) return 'main';
-  if (snapshots.includes('master')) return 'master';
-  return snapshots[0] || null;
+    // bruvDir may be repo root or .bruv dir itself; normalise
+    const repoRoot = path.basename(bruvDir) === '.bruv' ? path.dirname(bruvDir) : bruvDir;
+    const bruvSubDir = path.join(repoRoot, '.bruv');
+    if (!fs.existsSync(bruvSubDir)) return null;
+    const snapshots = listSnapshots(bruvDir);
+    if (snapshots.includes('gh-pages')) return 'gh-pages';
+    if (snapshots.includes('main')) return 'main';
+    if (snapshots.includes('master')) return 'master';
+    return snapshots[0] || null;
 }
 
 /**
  * Resolve a file from the publishing branch for pages.
  */
 function resolveFileContent(bruvDir, branch, subpath) {
-  let cleanPath = subpath.replace(/^\/+|\/+$/g, '');
-  if (cleanPath.includes('..')) return null;
+    let cleanPath = (subpath || '').replace(/^\/+|\/+$/g, '');
+    if (cleanPath.includes('..')) return null;
 
-  // If path is empty or a directory, look for index.html
-  if (cleanPath === '') {
-    cleanPath = 'index.html';
-  }
-  
-  let content = getFileContent(bruvDir, branch, cleanPath);
-  if (!content) {
-    // Try with .html
-    content = getFileContent(bruvDir, branch, cleanPath + '.html');
-  }
-  if (!content && !cleanPath.startsWith('index')) {
-    // Try as directory with index.html
-    content = getFileContent(bruvDir, branch, cleanPath + '/index.html');
-  }
-  
-  return content;
+    if (cleanPath === '') {
+        cleanPath = 'index.html';
+    }
+
+    let content = getFileContent(bruvDir, branch, cleanPath);
+    if (!content) {
+        content = getFileContent(bruvDir, branch, cleanPath + '.html');
+    }
+    if (!content && !cleanPath.startsWith('index')) {
+        content = getFileContent(bruvDir, branch, cleanPath + '/index.html');
+    }
+
+    return content;
 }
 
 /**
- * Get the MIME type for a file extension.
+ * Read a raw bruv object (for internal use only).
+ * Returns {type, content} or null.
  */
-const MIME_TYPES = {
-  'html': 'text/html; charset=utf-8',
-  'htm': 'text/html; charset=utf-8',
-  'css': 'text/css; charset=utf-8',
-  'js': 'application/javascript; charset=utf-8',
-  'mjs': 'application/javascript; charset=utf-8',
-  'json': 'application/json; charset=utf-8',
-  'svg': 'image/svg+xml; charset=utf-8',
-  'png': 'image/png',
-  'jpg': 'image/jpeg',
-  'jpeg': 'image/jpeg',
-  'gif': 'image/gif',
-  'ico': 'image/x-icon',
-  'txt': 'text/plain; charset=utf-8',
-  'md': 'text/markdown; charset=utf-8',
-  'pdf': 'application/pdf',
-  'xml': 'application/xml; charset=utf-8',
-  'webp': 'image/webp',
-  'woff': 'font/woff',
-  'woff2': 'font/woff2',
-  'ttf': 'font/ttf',
-  'eot': 'application/vnd.ms-fontobject',
-  'otf': 'font/otf',
-};
+function readBruvObject(bruvDir, hash) {
+    try {
+        const objects = _getObjects(bruvDir);
+        return objects.readObject(hash);
+    } catch (e) {
+        return null;
+    }
+}
 
-function getMimeType(filePath) {
-  const ext = path.extname(filePath).toLowerCase().replace(/^\./, '');
-  return MIME_TYPES[ext] || 'application/octet-stream';
+/**
+ * Read a bruv commit by hash.
+ */
+function readBruvCommit(bruvDir, hash) {
+    try {
+        const objects = _getObjects(bruvDir);
+        return objects.readCommit(hash);
+    } catch (e) {
+        return null;
+    }
+}
+
+/**
+ * Read a bruv tree (list of entries).
+ */
+function readBruvTree(bruvDir, hash) {
+    try {
+        const objects = _getObjects(bruvDir);
+        return objects.readTree(hash) || [];
+    } catch (e) {
+        return [];
+    }
 }
 
 /**
  * Fallback: if there's a legacy git bare repo and no bruv, use git commands.
- * This provides backward compatibility during migration.
  */
 function fallbackGitExec(repoPath, command) {
-  const bareDir = repoPath;
-  if (!fs.existsSync(path.join(bareDir, 'HEAD'))) return null;
-  try {
-    return execSync(command, { cwd: bareDir, stdio: 'pipe', maxBuffer: 10 * 1024 * 1024 }).toString();
-  } catch {
-    return null;
-  }
+    const bareDir = repoPath;
+    if (!fs.existsSync(path.join(bareDir, 'HEAD'))) return null;
+    try {
+        return execSync(command, { cwd: bareDir, stdio: 'pipe', maxBuffer: 10 * 1024 * 1024 }).toString();
+    } catch {
+        return null;
+    }
 }
 
 module.exports = {
-  readBruvObject,
-  readBruvCommit,
-  readBruvTree,
-  readBruvBlob,
-  readBruvSnapshot,
-  resolveHead,
-  listSnapshots,
-  listTags,
-  getCommitHistory,
-  flattenTree,
-  getFileContent,
-  getPublishingBranch,
-  resolveFileContent,
-  getMimeType,
-  fallbackGitExec,
-  shortHash,
+    // Core reads
+    readBruvObject,
+    readBruvCommit,
+    readBruvTree,
+    readBruvBlob,
+    readBruvSnapshot,
+    resolveHead,
+    listSnapshots,
+    listTags,
+    getCommitHistory,
+    flattenTree,
+    getFileContent,
+    getPublishingBranch,
+    resolveFileContent,
+    getMimeType,
+    fallbackGitExec,
+    shortHash,
 };

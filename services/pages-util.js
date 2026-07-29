@@ -6,6 +6,9 @@ const db = require('../database');
 const bruvUtils = require('./bruv-utils');
 const gitToBruv = require('./git-to-bruv');
 
+// Import bruv library for direct bruv access
+const BruvObjects = require('../../bruv/src/core/objects');
+
 const MIME_TYPES = {
     'html': 'text/html; charset=utf-8',
     'htm': 'text/html; charset=utf-8',
@@ -36,15 +39,24 @@ function getMimeType(filePath) {
     return MIME_TYPES[ext] || 'application/octet-stream';
 }
 
+/**
+ * Get the publishing branch for a repo.
+ * For bruv repos: uses BruvObjects.listSnapshots() directly.
+ * For legacy git repos: falls back to git commands.
+ */
 function getPublishingBranch(repoPath) {
-    // Try bruv first
     const bruvDir = path.join(repoPath, '.bruv');
     if (fs.existsSync(bruvDir)) {
-        const branch = bruvUtils.getPublishingBranch(bruvDir);
-        if (branch) return branch;
+        // Use BruvObjects from bruv library directly
+        const objects = new BruvObjects(repoPath);
+        const snapshots = objects.listSnapshots();
+        if (snapshots.includes('gh-pages')) return 'gh-pages';
+        if (snapshots.includes('main')) return 'main';
+        if (snapshots.includes('master')) return 'master';
+        return snapshots[0] || null;
     }
-    
-    // Fallback to git
+
+    // Fallback to git (legacy bare repo)
     if (!fs.existsSync(repoPath)) return null;
     try {
         const branchList = execSync(`git branch --format='%(refname:short)'`, { cwd: repoPath }).toString();
@@ -58,32 +70,41 @@ function getPublishingBranch(repoPath) {
     return null;
 }
 
+/**
+ * Get the type of a path in a git repo ('blob', 'tree', or null).
+ * Only used for legacy git repo fallback.
+ */
 function getPathType(repoPath, branch, gitPath) {
     try {
         const type = execSync(`git cat-file -t ${branch}:${gitPath}`, { cwd: repoPath, stdio: 'pipe' }).toString().trim();
-        return type; // 'blob' or 'tree'
+        return type;
     } catch (e) {
         return null;
     }
 }
 
+/**
+ * Resolve file content for pages serving.
+ * For bruv repos: uses BruvObjects from bruv library directly.
+ * For legacy git repos: falls back to git commands.
+ */
 function resolveFileContent(repoPath, branch, subpath) {
-    // Try bruv first
     const bruvDir = path.join(repoPath, '.bruv');
     if (fs.existsSync(bruvDir)) {
-        let cleanPath = subpath.replace(/^\/+|\/+$/g, '');
+        let cleanPath = (subpath || '').replace(/^\/+|\/+$/g, '');
         if (cleanPath.includes('..')) return null;
-        
-        const content = bruvUtils.resolveFileContent(bruvDir, branch, cleanPath);
+
+        // Use bruvUtils which delegates to BruvObjects
+        const content = bruvUtils.resolveFileContent(repoPath, branch, cleanPath);
         if (content) {
             const mimeType = getMimeType(cleanPath || 'index.html');
             return { content, mimeType };
         }
         return null;
     }
-    
-    // Fallback to git
-    let cleanPath = subpath.replace(/^\/+|\/+$/g, '');
+
+    // Fallback to git (legacy bare repo)
+    let cleanPath = (subpath || '').replace(/^\/+|\/+$/g, '');
     if (cleanPath.includes('..')) return null;
 
     let resolvedPath = cleanPath;
@@ -148,17 +169,31 @@ async function resolveRepoByCustomDomain(hostname) {
         const repo = item.value;
         const repoPath = await gitToBruv.resolveRepoPath(path.join(__dirname, '..', 'repos'), repo.owner, repo.name);
         if (!repoPath) continue;
-        
+
         const branch = getPublishingBranch(repoPath);
         if (!branch) continue;
 
         const bruvDir = path.join(repoPath, '.bruv');
-        
+
         if (fs.existsSync(bruvDir)) {
-            // Check CNAME in bruv repo
-            const cnameContent = bruvUtils.getFileContent(bruvDir, branch, 'CNAME');
-            if (cnameContent && cnameContent.toString().trim().toLowerCase() === hostname.toLowerCase()) {
-                return { owner: repo.owner, repo: repo.name, branch, repoPath };
+            // Use BruvObjects from bruv library to read CNAME file
+            const objects = new BruvObjects(repoPath);
+            const head = objects.resolveHead();
+            if (head && head.commit && head.commit.tree) {
+                // Find CNAME in the tree
+                const snap = objects.readSnapshot(branch);
+                if (snap && snap.commit && snap.commit.tree) {
+                    const tree = objects.readTree(snap.commit.tree);
+                    if (tree) {
+                        const cnameEntry = tree.find(e => e.name === 'CNAME' && e.type === 'blob');
+                        if (cnameEntry) {
+                            const cnameContent = objects.readBlob(cnameEntry.hash);
+                            if (cnameContent && cnameContent.toString().trim().toLowerCase() === hostname.toLowerCase()) {
+                                return { owner: repo.owner, repo: repo.name, branch, repoPath };
+                            }
+                        }
+                    }
+                }
             }
         } else {
             // Fallback to git

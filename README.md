@@ -40,20 +40,21 @@ A professional-grade, self-hosted web frontend for **[bruv](https://github.com/m
 ### Installation
 
 ```bash
-git clone https://github.com/nodemixaholic/NodeBruv.git
+git clone https://github.com/MyMel2001/bruv.git
+git clone https://github.com/MyMel2001/NodeBruv.git
 cd NodeBruv
 npm install
 cp .env.example .env  # Edit as needed
 npm run dev
 ```
 
-Server runs at `http://localhost:3000` (configurable via `PORT` in `.env`).
+Server runs at `http://localhost:3210` (configurable via `PORT` in `.env`).
 
 ## ⚙️ Configuration
 
 | Variable | Description | Default |
 |---|---|---|
-| `PORT` | Server port | `3000` |
+| `PORT` | Server port | `3210` |
 | `SESSION_SECRET` | Session secret | `super-secret-bruv-frontend` |
 | `DB_ENCRYPTION_KEY` | 32-char AES-256 key | (required) |
 | `MAIN_DOMAIN` | Main domain | `localhost` |
@@ -70,8 +71,6 @@ NodeBruv converts existing bare git repos to bruv:
 - **Push**: After git push, repo auto-converted
 - **Merge**: After PR merge, repo auto-converted
 - **Manual**: `/import/convert-git-to-bruv` endpoint for batch conversion
-
-Git objects remain intact alongside `.bruv/` for backward compatibility.
 
 ## 🔒 Security
 
