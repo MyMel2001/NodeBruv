@@ -77,6 +77,10 @@ router.get('/:owner/:repo.git/info/refs', (req, res) => {
     res.write(`${magicLen}${magicStr}0000`);
 
     const git = spawn('git', [serviceName, '--stateless-rpc', '--advertise-refs', req.repoPath]);
+    git.on('error', (err) => {
+        console.error('[git-server] advertise-refs failed:', err.message);
+        res.status(500).end();
+    });
     git.stdout.pipe(res);
 });
 
@@ -100,6 +104,10 @@ scanner.runPreReceive();
     }
 
     const git = spawn('git', ['receive-pack', '--stateless-rpc', req.repoPath]);
+    git.on('error', (err) => {
+        console.error('[git-server] receive-pack failed:', err.message);
+        res.status(500).end();
+    });
     
     req.pipe(git.stdin);
     git.stdout.pipe(res);
@@ -121,6 +129,10 @@ router.post('/:owner/:repo.git/git-upload-pack', (req, res) => {
     res.setHeader('Cache-Control', 'no-cache');
 
     const git = spawn('git', ['upload-pack', '--stateless-rpc', req.repoPath]);
+    git.on('error', (err) => {
+        console.error('[git-server] upload-pack failed:', err.message);
+        res.status(500).end();
+    });
     
     req.pipe(git.stdin);
     git.stdout.pipe(res);

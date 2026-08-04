@@ -214,6 +214,10 @@ router.post('/:owner/:repo.git/git-upload-pack', (req, res) => {
 
     const { spawn } = require('child_process');
     const git = spawn('git', ['upload-pack', '--stateless-rpc', req.repoPath]);
+    git.on('error', (err) => {
+        console.error('[bruv-server] upload-pack failed:', err.message);
+        res.status(500).end();
+    });
     req.pipe(git.stdin);
     git.stdout.pipe(res);
 });
@@ -241,6 +245,10 @@ scanner.runPreReceive();
     }
 
     const git = spawn('git', ['receive-pack', '--stateless-rpc', req.repoPath]);
+    git.on('error', (err) => {
+        console.error('[bruv-server] receive-pack failed:', err.message);
+        res.status(500).end();
+    });
     req.pipe(git.stdin);
     git.stdout.pipe(res);
     

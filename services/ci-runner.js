@@ -28,7 +28,12 @@ function run(repoPath) {
         }
 
         // Legacy git bare repo fallback — git clone is required here
-        spawn('git', ['clone', repoPath, tempDir]).on('close', processWorkflows);
+        spawn('git', ['clone', repoPath, tempDir])
+            .on('error', (err) => {
+                console.error(`[CI] git clone failed for ${repoPath}: ${err.message}`);
+                cleanup(tempDir);
+            })
+            .on('close', processWorkflows);
     } catch (e) {
         console.error('CI Runner error:', e);
     }

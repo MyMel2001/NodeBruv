@@ -102,8 +102,14 @@ router.post('/', async (req, res) => {
 
             fs.mkdirSync(repoPath, { recursive: true });
             const git = spawn('git', ['clone', '--mirror', cloneUrl, repoPath]);
+            git.on('error', (err) => {
+                console.error(`[import] Failed to clone ${repoName}: ${err.message}`);
+                if (fs.existsSync(repoPath)) fs.rmSync(repoPath, { recursive: true, force: true });
+                sendUpdate({ status: 'failed', repo: repoName, message: `Failed to clone ${repoName}: ${err.message}` });
+            });
             
             await new Promise((resolve) => {
+                git.on('error', () => resolve());
                 git.on('close', (code) => {
                     if (code === 0) {
                         importedCount++;
@@ -260,6 +266,7 @@ router.post('/repo', async (req, res) => {
         const git = spawn('git', ['clone', '--mirror', authCloneUrl, repoPath]);
 
         await new Promise((resolve, reject) => {
+            git.on('error', (err) => reject(err));
             git.on('close', async (code) => {
                 if (code === 0) {
                     try {

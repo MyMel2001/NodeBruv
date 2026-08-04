@@ -65,6 +65,7 @@ function startAutoUpdater() {
                         const git = spawn('git', ['remote', 'update'], { cwd: repoPath });
 
                         await new Promise(resolve => {
+                            git.on('error', () => resolve());
                             git.on('close', async code => {
                                 if (code !== 0) {
                                     console.error(`[Repo Updater] Failed to update ${repo.owner}/${repo.name}. Exit code: ${code}`);
