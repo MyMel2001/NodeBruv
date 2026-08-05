@@ -352,7 +352,31 @@ function cloneAndConvert(cloneUrl, destPath, options = {}) {
     return new Promise((resolve, reject) => {
         console.log(`[git-to-bruv] Cloning ${cloneUrl}...`);
 
-        const tmpDir = path.join(path.dirname(destPath), '.tmp-' + path.basename(destPath));
+        // Use a unique temp dir per call so concurrent clones for the same
+        // destination never collide on an identical directory. mkdtempSync
+        // appends random characters, guaranteeing uniqueness.
+        ensureDir(path.dirname(destPath));
+        const tmpDir = fs.mkdtempSync(path.join(path.dirname(destPath), '.tmp-' + path.basename(destPath) + '-'));
+
+        // Guard against double-settle (both 'error' and 'close' may fire).
+        let settled = false;
+        const finish = (fn, val) => {
+            if (settled) return;
+            settled = true;
+            fn(val);
+        };
+
+        // Best-effort cleanup that retries to avoid ENOTEMPTY crashes when a
+        // concurrent operation is still writing into the temp dir.
+        const cleanup = () => {
+            try {
+                if (fs.existsSync(tmpDir)) {
+                    fs.rmSync(tmpDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+                }
+            } catch (e) {
+                console.error(`[git-to-bruv] Cleanup of ${tmpDir} failed: ${e.message}`);
+            }
+        };
 
         // Clone as mirror (bare) into temp dir — git clone is required here for GitHub/Git URLs
         const git = spawn('git', ['clone', '--mirror', cloneUrl, tmpDir]);
@@ -362,8 +386,8 @@ function cloneAndConvert(cloneUrl, destPath, options = {}) {
 
         git.on('close', async code => {
             if (code !== 0) {
-                if (fs.existsSync(tmpDir)) fs.rmSync(tmpDir, { recursive: true, force: true });
-                return reject(new Error(`Git clone failed (code ${code}): ${stderr}`));
+                cleanup();
+                return finish(reject, new Error(`Git clone failed (code ${code}): ${stderr}`));
             }
 
             try {
@@ -372,21 +396,21 @@ function cloneAndConvert(cloneUrl, destPath, options = {}) {
 
                 // Move to final destination
                 if (fs.existsSync(destPath)) {
-                    fs.rmSync(destPath, { recursive: true, force: true });
+                    fs.rmSync(destPath, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
                 }
                 ensureDir(path.dirname(destPath));
                 fs.renameSync(tmpDir, destPath);
 
-                resolve(result);
+                finish(resolve, result);
             } catch (e) {
-                if (fs.existsSync(tmpDir)) fs.rmSync(tmpDir, { recursive: true, force: true });
-                reject(e);
+                cleanup();
+                finish(reject, e);
             }
         });
 
         git.on('error', err => {
-            if (fs.existsSync(tmpDir)) fs.rmSync(tmpDir, { recursive: true, force: true });
-            reject(err);
+            cleanup();
+            finish(reject, err);
         });
     });
 }
