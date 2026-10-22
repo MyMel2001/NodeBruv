@@ -45,6 +45,8 @@ function run(repoPath) {
         if (!fs.existsSync(workflowsDir)) return cleanup(tempDir);
 
         const files = fs.readdirSync(workflowsDir).filter(f => f.endsWith('.yml') || f.endsWith('.yaml'));
+        let launched = 0;
+        let pending = 0;
 
         files.forEach(file => {
             const content = fs.readFileSync(path.join(workflowsDir, file), 'utf8');
@@ -98,6 +100,8 @@ function run(repoPath) {
                             const scriptPath = path.join(tempDir, `.ci_script_${jobId}.sh`);
                             fs.writeFileSync(scriptPath, shellScript);
 
+                            launched++;
+                            pending++;
                             const docker = spawn('docker', [
                                 'run', '--rm',
                                 '-e', 'GITHUB_WORKSPACE=/workspace',
@@ -111,7 +115,8 @@ function run(repoPath) {
                             docker.stderr.on('data', d => process.stderr.write(`[CI][${jobId}] ERR: ${d}`));
                             docker.on('close', code => {
                                 console.log(`[CI][${jobId}] Finished with code ${code}`);
-                                cleanup(tempDir);
+                                pending--;
+                                if (pending === 0) cleanup(tempDir);
                             });
                         }
                     }
@@ -120,6 +125,9 @@ function run(repoPath) {
                 console.error(`[CI] Error parsing workflow ${file}:`, e);
             }
         });
+
+        // No job launched (bad YAML, no jobs, or no steps) — clean up now
+        if (launched === 0) cleanup(tempDir);
     }
 }
 

@@ -12,7 +12,6 @@ const fs = require('fs');
 const BruvObjects = require('../../bruv/src/core/objects');
 const SnapshotManager = require('../../bruv/src/snapshot/manager');
 const { shortHash } = require('../../bruv/src/utils/hash');
-const { execSync } = require('child_process');
 
 const MIME_TYPES = {
     'html': 'text/html; charset=utf-8',
@@ -299,16 +298,12 @@ function readBruvTree(bruvDir, hash) {
 }
 
 /**
- * Fallback: if there's a legacy git bare repo and no bruv, use git commands.
+ * Line diff between two snapshots — delegates to the bruv library (no git).
  */
-function fallbackGitExec(repoPath, command) {
-    const bareDir = repoPath;
-    if (!fs.existsSync(path.join(bareDir, 'HEAD'))) return null;
-    try {
-        return execSync(command, { cwd: bareDir, stdio: 'pipe', maxBuffer: 10 * 1024 * 1024 }).toString();
-    } catch {
-        return null;
-    }
+function snapshotDiff(bruvDir, fromSnapshot, toSnapshot) {
+    const BruvRepo = require('../../bruv/src/core/repo');
+    const repoPath = path.basename(bruvDir) === '.bruv' ? path.dirname(bruvDir) : bruvDir;
+    return new BruvRepo(repoPath).diffSnapshots(fromSnapshot, toSnapshot);
 }
 
 module.exports = {
@@ -327,6 +322,6 @@ module.exports = {
     getPublishingBranch,
     resolveFileContent,
     getMimeType,
-    fallbackGitExec,
+    snapshotDiff,
     shortHash,
 };

@@ -42,8 +42,8 @@ const importRouter = require('./routes/import');
 app.use('/pages', pagesRouter);
 app.use('/', webRouter);
 app.use('/import', importRouter);
-// The bruv server handles paths like /user/repo
-app.use('/', bruvRouter);
+// bruv object-transfer API: /:owner/:repo/api/repo/{push,pull,clone}
+app.use('/:owner/:repo/api', bruvRouter);
 
 // Auto-convert existing git repos to bruv on startup
 const gitToBruv = require('./services/git-to-bruv');

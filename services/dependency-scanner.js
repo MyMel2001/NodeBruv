@@ -15,29 +15,22 @@ const BruvObjects = require('../../bruv/src/core/objects');
  * @param {string} repoPath
  */
 async function scan(repoPath) {
+    // bruv-only after conversion; legacy bare git repos are converted on access
+    if (!gitToBruv.isBruvRepo(repoPath)) return;
+
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'bruv-dep-scan-'));
 
     try {
-        if (gitToBruv.isBruvRepo(repoPath)) {
-            // Use bruv checkout — no git needed
-            try {
-                gitToBruv.checkoutBruvToDir(repoPath, tempDir);
-            } catch (e) {
-                console.error(`[DEP SCAN] bruv checkout failed: ${e.message}`);
-                return cleanup(tempDir);
-            }
-        } else {
-            // Legacy git bare repo fallback — git clone is required here
-            try {
-                execSync(`git clone ${repoPath} ${tempDir}`);
-            } catch (e) {
-                console.error(`[DEP SCAN] git clone failed: ${e.message}`);
-                return cleanup(tempDir);
-            }
+        // Use bruv checkout — no git needed
+        try {
+            gitToBruv.checkoutBruvToDir(repoPath, tempDir);
+        } catch (e) {
+            console.error(`[DEP SCAN] bruv checkout failed: ${e.message}`);
+            return;
         }
 
         const pkgPath = path.join(tempDir, 'package.json');
-        if (!fs.existsSync(pkgPath)) return cleanup(tempDir);
+        if (!fs.existsSync(pkgPath)) return;
 
         console.log(`[DEP SCAN] Scanning ${repoPath}...`);
 
@@ -49,6 +42,7 @@ async function scan(repoPath) {
             const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
 
             for (const [name, info] of Object.entries(outdated)) {
+                if (!info || !info.current || !info.latest) continue;
                 if (info.current !== info.latest && info.latest.split('.')[0] === info.current.split('.')[0]) {
                     console.log(`[DEP SCAN] Updating ${name} to ${info.latest}`);
                     execSync(`npm install ${name}@${info.latest} --save`, { cwd: tempDir });
@@ -56,7 +50,7 @@ async function scan(repoPath) {
                 }
             }
 
-            if (updated && gitToBruv.isBruvRepo(repoPath)) {
+            if (updated) {
                 // Commit updated package.json via bruv (no git needed)
                 const repo = new BruvRepo(repoPath);
                 const filesToAdd = ['package.json', 'package-lock.json'].filter(f =>
@@ -80,12 +74,6 @@ async function scan(repoPath) {
                     repo.commit('chore: automatic dependency updates', { author: 'dep-scanner' });
                     console.log(`[DEP SCAN] Committed updates to bruv repo at ${repoPath}`);
                 }
-            } else if (updated) {
-                // Legacy git path
-                execSync(`git add package.json package-lock.json`, { cwd: tempDir });
-                execSync(`git commit -m "chore: automatic dependency updates"`, { cwd: tempDir });
-                execSync(`git push origin main`, { cwd: tempDir });
-                console.log(`[DEP SCAN] Pushed updates to ${repoPath}`);
             }
 
         } catch (err) {

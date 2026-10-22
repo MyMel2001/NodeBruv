@@ -225,16 +225,6 @@ async function remoteRemove(repoPath, name) {
   return bruvFetch(repoPath, 'DELETE', `/remotes/${encodeURIComponent(name)}`);
 }
 
-// ─── Push / Pull ─────────────────────────────────────────────────────────────
-
-async function repoPush(repoPath, opts = {}) {
-  return bruvFetch(repoPath, 'POST', '/repo/push', opts);
-}
-
-async function repoPull(repoPath, opts = {}) {
-  return bruvFetch(repoPath, 'POST', '/repo/pull', opts);
-}
-
 // ─── Config ──────────────────────────────────────────────────────────────────
 
 async function configGet() {
@@ -295,9 +285,6 @@ module.exports = {
   remotesList,
   remoteAdd,
   remoteRemove,
-  // Push / Pull
-  repoPush,
-  repoPull,
   // Config
   configGet,
   configSet,

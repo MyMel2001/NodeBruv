@@ -59,18 +59,32 @@ Server runs at `http://localhost:3210` (configurable via `PORT` in `.env`).
 | `DB_ENCRYPTION_KEY` | 32-char AES-256 key | (required) |
 | `MAIN_DOMAIN` | Main domain | `localhost` |
 | `PAGES_DOMAIN` | Pages CNAME domain | `pages.nodebruv.com` |
+| `BRUV_API_URL` | bruv API server URL | `http://localhost:2658` |
 | `BRUV_BLOCK_ENV_FILES` | Block credential files | `true` |
 | `BRUV_BLOCKED_PATTERNS` | Blocked file patterns | `.env,.env.*,...` |
 
 ## 🔄 Git → Bruv Auto-Conversion
 
-NodeBruv converts existing bare git repos to bruv:
+NodeBruv converts existing bare git repos to bruv, then **strips the git object
+store** (keeping `.bruv/` and `.bruvignore`) so history isn't stored twice.
+The origin URL is preserved in `.bruv/remotes.json`.
 
 - **Startup**: All `.git` bare repos in `repos/` are scanned and converted
-- **Import**: GitHub-imported repos cloned then converted
-- **Push**: After git push, repo auto-converted
-- **Merge**: After PR merge, repo auto-converted
+- **Access**: Legacy repos auto-convert on first access via `resolveRepoPath`
+- **Sync**: Mirrored repos update incrementally — skipped when the remote HEAD
+  hasn't moved; local PRs and config survive re-clones
 - **Manual**: `/import/convert-git-to-bruv` endpoint for batch conversion
+
+## 📦 Object Transfer API
+
+Push/pull/clone talk JSON, not git protocol, at `/:owner/:repo/api/repo/*`:
+
+- `POST /:owner/:repo/api/repo/push` — receive objects + move snapshot ref (auth required for private repos)
+- `POST /:owner/:repo/api/repo/pull` — export objects for one snapshot
+- `POST /:owner/:repo/api/repo/clone` — export all snapshots + objects
+
+bruv objects are zlib-compressed on disk; the bruv API server only honors the
+`X-Bruv-Repo-Path` header for paths under `BRUV_ALLOWED_ROOTS`.
 
 ## 🔒 Security
 

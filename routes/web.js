@@ -213,9 +213,8 @@ router.get('/user/:username', async (req, res) => {
         .filter(r => !r.isPrivate || (req.session.user && req.session.user.username === r.owner));
         
     let profileReadmeContent = null;
-    // Check bruv repo first, then legacy git
+    // Check bruv repo
     const bruvProfilePath = path.join(__dirname, '..', 'repos', username, username + '.bruv');
-    const gitProfilePath = path.join(__dirname, '..', 'repos', username, username + '.git');
     
     let resolvedRepoPath = null;
     let bruvDir = null;
@@ -223,8 +222,6 @@ router.get('/user/:username', async (req, res) => {
     if (fs.existsSync(bruvProfilePath) && gitToBruv.isBruvRepo(bruvProfilePath)) {
         resolvedRepoPath = bruvProfilePath;
         bruvDir = path.join(bruvProfilePath, '.bruv');
-    } else if (fs.existsSync(gitProfilePath)) {
-        resolvedRepoPath = gitProfilePath;
     }
     
     if (resolvedRepoPath) {
@@ -242,28 +239,6 @@ router.get('/user/:username', async (req, res) => {
                             profileReadmeContent = readmeContent.toString('utf8');
                         }
                     }
-                }
-            } else {
-                // Fallback to git
-                const { execSync } = require('child_process');
-                try {
-                    let currentBranch = '';
-                    try {
-                        currentBranch = execSync(`git rev-parse --abbrev-ref HEAD`, { cwd: resolvedRepoPath }).toString().trim();
-                        if (currentBranch === 'HEAD') currentBranch = 'main';
-                    } catch (e) {
-                        const branchList = execSync(`git branch --format='%(refname:short)'`, { cwd: resolvedRepoPath }).toString();
-                        const branches = branchList.split('\n').filter(Boolean);
-                        currentBranch = branches[0] || 'main';
-                    }
-                    const lsTree = execSync(`git ls-tree -r ${currentBranch} --name-only`, { cwd: resolvedRepoPath }).toString();
-                    const files = lsTree.split('\n').filter(Boolean);
-                    const readmeFile = files.find(f => f.toLowerCase() === 'readme.md' || f.toLowerCase() === 'readme.txt' || f.toLowerCase() === 'readme');
-                    if (readmeFile) {
-                        profileReadmeContent = execSync(`git show ${currentBranch}:${readmeFile}`, { cwd: resolvedRepoPath }).toString();
-                    }
-                } catch (err) {
-                    // ignore
                 }
             }
         } catch (err) {
@@ -474,48 +449,33 @@ router.get('/:owner/:repo', ensureRepoAccess, async (req, res) => {
             snapshots = bruvUtils.listSnapshots(bruvDir);
             const head = bruvUtils.resolveHead(bruvDir);
             currentBranch = branch || (head ? head.name : snapshots[0] || 'main');
-            
-            if (head && head.commit && head.commit.tree) {
-                const fileMap = bruvUtils.flattenTree(bruvDir, head.commit.tree);
+
+            // ?branch= selects a snapshot other than HEAD
+            let viewHead = head;
+            if (currentBranch && (!head || currentBranch !== head.name)) {
+                const snap = bruvUtils.readBruvSnapshot(bruvDir, currentBranch);
+                if (snap) {
+                    viewHead = { name: currentBranch, commitHash: snap.commitHash, commit: snap.commit };
+                }
+            }
+
+            if (viewHead && viewHead.commit && viewHead.commit.tree) {
+                const fileMap = bruvUtils.flattenTree(bruvDir, viewHead.commit.tree);
                 files = Array.from(fileMap.keys());
-                
+
                 // Get commits
-                commits = bruvUtils.getCommitHistory(bruvDir, head.commitHash, 4);
+                commits = bruvUtils.getCommitHistory(bruvDir, viewHead.commitHash, 4);
                 commits = commits.map(c => `${bruvUtils.shortHash(c.hash)} ${c.message.split('\n')[0]}`);
-                
+
                 // Read README
                 const readmeFile = files.find(f => f.toLowerCase() === 'readme.md' || f.toLowerCase() === 'readme.txt' || f.toLowerCase() === 'readme');
                 if (readmeFile) {
-                    const content = bruvUtils.getFileContent(bruvDir, null, readmeFile);
+                    const content = bruvUtils.getFileContent(bruvDir, currentBranch, readmeFile);
                     if (content) readmeContent = content.toString('utf8');
                 }
             }
         } else {
-            // Fallback to git
-            const { execSync } = require('child_process');
-            const branchList = execSync(`git branch --format='%(refname:short)'`, { cwd: repoPath }).toString();
-            snapshots = branchList.split('\n').filter(Boolean);
-            
-            currentBranch = branch || '';
-            if (!currentBranch) {
-                try {
-                    currentBranch = execSync(`git rev-parse --abbrev-ref HEAD`, { cwd: repoPath }).toString().trim();
-                    if (currentBranch === 'HEAD') currentBranch = 'main';
-                } catch (e) {
-                    currentBranch = snapshots[0] || 'main';
-                }
-            }
-            
-            const lsTree = execSync(`git ls-tree -r ${currentBranch} --name-only`, { cwd: repoPath }).toString();
-            files = lsTree.split('\n').filter(Boolean);
-            
-            const log = execSync(`git log -n 4 --oneline ${currentBranch}`, { cwd: repoPath }).toString();
-            commits = log.split('\n').filter(Boolean);
-
-            const readmeFile = files.find(f => f.toLowerCase() === 'readme.md' || f.toLowerCase() === 'readme.txt' || f.toLowerCase() === 'readme');
-            if (readmeFile) {
-                readmeContent = execSync(`git show ${currentBranch}:${readmeFile}`, { cwd: repoPath }).toString();
-            }
+            commits = ['Empty repository'];
         }
     } catch (err) {
         commits = ['Empty repository'];
@@ -551,36 +511,22 @@ router.post('/:owner/:repo/fork', ensureRepoAccess, async (req, res) => {
         format: repoData.format || 'git'
     };
     
-    const originalRepoPath = gitToBruv.resolveRepoPath(path.join(__dirname, '..', 'repos'), owner, repo);
+    const originalRepoPath = await gitToBruv.resolveRepoPath(path.join(__dirname, '..', 'repos'), owner, repo);
     if (!originalRepoPath) return res.status(404).send('Original repository not found');
     
     let newRepoPath = null;
     const originalBruvDir = path.join(originalRepoPath, '.bruv');
     
     try {
-        if (fs.existsSync(originalBruvDir)) {
-            // Fork bruv repo by copying .bruv/ content
-            newRepoPath = path.join(__dirname, '..', 'repos', currentUser, newRepoName + '.bruv');
-            fs.mkdirSync(newRepoPath, { recursive: true });
-            // Copy just the .bruv directory
-            const { execSync } = require('child_process');
-            execSync(`cp -r "${originalBruvDir}" "${newRepoPath}/"`);
-            newRepoData.format = 'bruv';
-        } else {
-            // Fallback to git clone
-            newRepoPath = path.join(__dirname, '..', 'repos', currentUser, newRepoName + '.git');
-            fs.mkdirSync(newRepoPath, { recursive: true });
-            const { execSync } = require('child_process');
-            execSync(`git clone --bare ${originalRepoPath} ${newRepoPath}`);
-            
-            // Auto-convert to bruv
-            try {
-                await gitToBruv.convertGitToBruv(newRepoPath);
-                newRepoData.format = 'bruv';
-            } catch (e) {
-                // Keep as git if conversion fails
-            }
+        if (!fs.existsSync(originalBruvDir)) {
+            return res.status(400).send('Original repository has no bruv data');
         }
+        // Fork bruv repo by copying .bruv/ content
+        newRepoPath = path.join(__dirname, '..', 'repos', currentUser, newRepoName + '.bruv');
+        fs.mkdirSync(newRepoPath, { recursive: true });
+        const { execSync } = require('child_process');
+        execSync(`cp -r "${originalBruvDir}" "${newRepoPath}/"`);
+        newRepoData.format = 'bruv';
         
         await db.repos.set(`${currentUser}_${newRepoName}`, newRepoData);
         res.redirect(`/${currentUser}/${newRepoName}`);
@@ -718,11 +664,6 @@ router.get('/:owner/:repo/pull/new', ensureRepoAccess, async (req, res) => {
     
     if (fs.existsSync(bruvDir)) {
         branches = bruvUtils.listSnapshots(bruvDir);
-    } else {
-        const { execSync } = require('child_process');
-        try {
-            branches = execSync(`git branch --format='%(refname:short)'`, { cwd: repoPath }).toString().split('\n').filter(Boolean);
-        } catch (e) {}
     }
     
     res.render('new_pull', { owner, repo, branches });
@@ -744,8 +685,8 @@ router.post('/:owner/:repo/pull/new', ensureRepoAccess, async (req, res) => {
                 targetSnapshot: base,
                 author,
             });
-            // Use the bruv-generated full hash as the PR id
-            const bruvId = result.fullHash ? result.fullHash.slice(0, 7) : id;
+            // Use the bruv-generated PR id (stable across updates)
+            const bruvId = result.id || (result.fullHash ? result.fullHash.slice(0, 7) : id);
             await db.pullRequests.set(bruvId, {
                 id: bruvId,
                 fullHash: result.fullHash,
@@ -779,10 +720,13 @@ router.get('/:owner/:repo/pull/:id', ensureRepoAccess, async (req, res) => {
     const repoPath = await gitToBruv.resolveRepoPath(path.join(__dirname, '..', 'repos'), owner, repo);
     if (!repoPath) return res.status(404).send('Repo not found');
     
+    const bruvDir = path.join(repoPath, '.bruv');
     let diff = '';
     try {
-        const { execSync } = require('child_process');
-        diff = execSync(`git diff ${pr.base}..${pr.head}`, { cwd: repoPath }).toString();
+        // bruv-native diff between the two snapshots (no git)
+        const diffs = bruvUtils.snapshotDiff(bruvDir, pr.base, pr.head);
+        diff = diffs.map(d => d.patch).join('\n');
+        if (!diff) diff = 'No changes.';
     } catch (e) {
         diff = 'Error generating diff: ' + e.message;
     }
@@ -799,36 +743,18 @@ router.post('/:owner/:repo/pull/:id/merge', ensureRepoAccess, async (req, res) =
     if (!repoPath) return res.status(404).send('Repo not found');
 
     const bruvDir = path.join(repoPath, '.bruv');
-    const isBruvRepo = fs.existsSync(bruvDir);
     
     try {
-        if (isBruvRepo) {
-            // Use bruv API for native merge (conflict-free union merge by default)
-            try {
-                await bruvApi.prMerge(repoPath, pr.fullHash || id, pr.author, 'union');
-            } catch (apiErr) {
-                // Fallback: try snapshots merge directly
-                console.warn('[bruv-api] prMerge failed, trying snapshots merge:', apiErr.message);
-                await bruvApi.snapshotsMerge(repoPath, [pr.base, pr.head], pr.author, `Merge PR #${id}: ${pr.title}`);
-            }
-            
-            // Auto-convert if not already bruv
-            if (!fs.existsSync(bruvDir)) {
-                try { await gitToBruv.convertGitToBruv(repoPath); } catch (e) {}
-            }
-        } else {
-            // Legacy git merge fallback
-            const { execSync } = require('child_process');
-            const tempDir = fs.mkdtempSync(path.join(require('os').tmpdir(), 'bruv-merge-'));
-            execSync(`git clone ${repoPath} ${tempDir}`);
-            execSync(`git checkout ${pr.base}`, { cwd: tempDir });
-            execSync(`git merge ${pr.head} --no-ff -m "Merge pull request #${id}: ${pr.title}"`, { cwd: tempDir });
-            execSync(`git push origin ${pr.base}`, { cwd: tempDir });
-            
-            // Auto-convert to bruv after merge
-            if (!fs.existsSync(bruvDir)) {
-                try { await gitToBruv.convertGitToBruv(repoPath); } catch (e) {}
-            }
+        if (!fs.existsSync(bruvDir)) {
+            return res.status(400).send('Repository has no bruv data');
+        }
+        // Use bruv API for native merge (conflict-free union merge by default)
+        try {
+            await bruvApi.prMerge(repoPath, id, pr.author, 'union');
+        } catch (apiErr) {
+            // Fallback: try snapshots merge directly
+            console.warn('[bruv-api] prMerge failed, trying snapshots merge:', apiErr.message);
+            await bruvApi.snapshotsMerge(repoPath, [pr.base, pr.head], pr.author, `Merge PR #${id}: ${pr.title}`);
         }
         
         pr.status = 'merged';
@@ -869,17 +795,6 @@ router.get('/:owner/:repo/releases', ensureRepoAccess, async (req, res) => {
                     createdAt: new Date()
                 }));
             }
-        } else {
-            try {
-                const { execSync } = require('child_process');
-                const tags = execSync(`git tag -l`, { cwd: repoPath }).toString().split('\n').filter(Boolean);
-                releases = tags.map(tag => ({
-                    tag,
-                    name: tag,
-                    body: 'Release ' + tag,
-                    createdAt: new Date()
-                }));
-            } catch (e) {}
         }
     }
     
@@ -898,29 +813,13 @@ router.post('/:owner/:repo/releases/new', ensureRepoAccess, async (req, res) => 
     if (!repoPath) return res.status(404).send('Repo not found');
     
     const bruvDir = path.join(repoPath, '.bruv');
-    const isBruvRepo = fs.existsSync(bruvDir);
     
     try {
-        if (isBruvRepo) {
-            // Use bruv API to create a tag natively
-            try {
-                await bruvApi.tagCreate(repoPath, tag, `${title}\n\n${body}`, req.session.user.username);
-            } catch (apiErr) {
-                console.warn('[bruv-api] tagCreate failed:', apiErr.message);
-                throw apiErr;
-            }
-        } else {
-            // Legacy git tag
-            const { execSync } = require('child_process');
-            execSync(`git tag -a ${tag} -m "${title}\n\n${body}"`, { cwd: repoPath });
-            
-            // Auto-convert to bruv after tag if needed
-            if (!fs.existsSync(bruvDir)) {
-                try {
-                    await gitToBruv.convertGitToBruv(repoPath);
-                } catch (e) {}
-            }
+        if (!fs.existsSync(bruvDir)) {
+            return res.status(400).send('Repository has no bruv data');
         }
+        // Use bruv API to create a tag natively
+        await bruvApi.tagCreate(repoPath, tag, `${title}\n\n${body}`, req.session.user.username);
         
         res.redirect(`/${owner}/${repo}/releases`);
     } catch (err) {

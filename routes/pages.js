@@ -17,43 +17,29 @@ router.get('/:owner/:repo*', async (req, res) => {
     const repo = parts[2];
     const subpath = parts.slice(3).join('/');
 
-    const repoPath = gitToBruv.resolveRepoPath(path.join(__dirname, '..', 'repos'), owner, repo);
+    const repoPath = await gitToBruv.resolveRepoPath(path.join(__dirname, '..', 'repos'), owner, repo);
     if (!repoPath) {
         return res.status(404).send('NodeBruv Pages site not found.');
     }
 
     const bruvDir = path.join(repoPath, '.bruv');
-    let branch = null;
-    
-    if (fs.existsSync(bruvDir)) {
-        // Use bruv snapshots
-        branch = bruvUtils.getPublishingBranch(bruvDir);
-    } else {
-        // Fallback to git
-        branch = pagesUtil.getPublishingBranch(repoPath);
+    if (!fs.existsSync(bruvDir)) {
+        return res.status(404).send('NodeBruv Pages site not found.');
     }
+
+    const branch = bruvUtils.getPublishingBranch(bruvDir);
 
     if (!branch) {
         return res.status(404).send('NodeBruv Pages site not found. Make sure you have a gh-pages, main, or master snapshot.');
     }
 
-    let file = null;
-    if (fs.existsSync(bruvDir)) {
-        const content = bruvUtils.resolveFileContent(bruvDir, branch, subpath);
-        if (content) {
-            const mimeType = bruvUtils.getMimeType(subpath || 'index.html');
-            file = { content, mimeType };
-        }
-    } else {
-        file = pagesUtil.resolveFileContent(repoPath, branch, subpath);
-    }
-
-    if (!file) {
+    const content = bruvUtils.resolveFileContent(bruvDir, branch, subpath);
+    if (!content) {
         return res.status(404).send('404 Not Found');
     }
 
-    res.set('Content-Type', file.mimeType);
-    return res.send(file.content);
+    res.set('Content-Type', bruvUtils.getMimeType(subpath || 'index.html'));
+    return res.send(content);
 });
 
 // Middleware for custom domain requests
@@ -95,26 +81,17 @@ async function customDomainMiddleware(req, res, next) {
             `);
         }
 
-        // Determine which method to use for file resolution
-        const resolvedPath = resolved.repoPath;
-        const bruvDir = path.join(resolvedPath, '.bruv');
-        
-        let file = null;
-        if (fs.existsSync(bruvDir)) {
-            const content = bruvUtils.resolveFileContent(bruvDir, resolved.branch, req.path);
-            if (content) {
-                file = { content, mimeType: bruvUtils.getMimeType(req.path || 'index.html') };
-            }
-        } else {
-            file = pagesUtil.resolveFileContent(resolvedPath, resolved.branch, req.path);
-        }
-        
-        if (!file) {
+        const bruvDir = path.join(resolved.repoPath, '.bruv');
+        const content = fs.existsSync(bruvDir)
+            ? bruvUtils.resolveFileContent(bruvDir, resolved.branch, req.path)
+            : null;
+
+        if (!content) {
             return res.status(404).send('404 Not Found');
         }
 
-        res.set('Content-Type', file.mimeType);
-        return res.send(file.content);
+        res.set('Content-Type', bruvUtils.getMimeType(req.path || 'index.html'));
+        return res.send(content);
     } catch (err) {
         console.error('Custom domain middleware error:', err);
         return next(err);

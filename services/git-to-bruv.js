@@ -157,7 +157,7 @@ async function convertGitTree(gitTreeHash, objects, bareGitPath) {
  * 5. Create HEAD pointing to the main/default snapshot
  */
 async function convertGitToBruv(bareGitPath, options = {}) {
-    if (isBruvRepo(bareGitPath)) {
+    if (isBruvRepo(bareGitPath) && !options.force) {
         return { status: 'already-bruv', path: bareGitPath };
     }
 
@@ -178,11 +178,13 @@ async function convertGitToBruv(bareGitPath, options = {}) {
     ensureDir(path.join(bruvDir, 'refs', 'snapshots'));
     ensureDir(path.join(bruvDir, 'refs', 'prs'));
 
-    // Write repo config
+    // Write repo config (merge over existing so re-conversion keeps created/isPrivate)
+    const existingConfig = readJson(path.join(bruvDir, 'config.json'), {});
     writeJson(path.join(bruvDir, 'config.json'), {
-        isPrivate: options.isPrivate || false,
-        defaultRemote: options.remote || null,
-        created: options.created || new Date().toISOString(),
+        ...existingConfig,
+        isPrivate: options.isPrivate ?? existingConfig.isPrivate ?? false,
+        defaultRemote: options.remote || existingConfig.defaultRemote || null,
+        created: existingConfig.created || options.created || new Date().toISOString(),
         convertedFromGit: true,
         convertedAt: new Date().toISOString(),
     });
@@ -339,8 +341,37 @@ async function convertGitToBruv(bareGitPath, options = {}) {
         ].join('\n') + '\n', 'utf8');
     }
 
+    // Drop the git object store — keeping it alongside bruv objects doubled
+    // (or worse) disk usage forever. Remote URL is preserved in remotes.json.
+    if (options.stripGit !== false) {
+        stripGitData(bareGitPath);
+    }
+
     console.log(`[git-to-bruv] Successfully converted ${bareGitPath}`);
     return { status: 'converted', path: bareGitPath, snapshots: branches.length, commits: allCommitHashes.size };
+}
+
+/**
+ * Remove all git internals from a converted repo, keeping .bruv/ and
+ * .bruvignore. Preserves origin URL into .bruv/remotes.json first.
+ */
+function stripGitData(repoPath) {
+    let remoteUrl = null;
+    try {
+        const cfg = fs.readFileSync(path.join(repoPath, 'config'), 'utf8');
+        const m = cfg.match(/\[remote "origin"\][^[]*?url\s*=\s*(\S+)/);
+        if (m) remoteUrl = m[1];
+    } catch (e) { /* no git config */ }
+
+    for (const entry of fs.readdirSync(repoPath)) {
+        if (entry === '.bruv' || entry === '.bruvignore') continue;
+        fs.rmSync(path.join(repoPath, entry), { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+    }
+
+    if (remoteUrl) {
+        writeJson(path.join(repoPath, '.bruv', 'remotes.json'), { origin: remoteUrl });
+    }
+    return remoteUrl;
 }
 
 /**
@@ -510,16 +541,21 @@ async function resolveRepoPath(reposBaseDir, owner, repoName) {
         return bruvPath;
     }
 
-    // Try .git (old bare git repo — auto-convert)
+    // Try .git (legacy bare git repo — auto-convert; may already hold .bruv)
     const gitPath = path.join(reposBaseDir, owner, repoName + '.git');
-    if (fs.existsSync(gitPath) && isBareGitRepo(gitPath)) {
-        console.log(`[git-to-bruv] Auto-converting legacy git repo: ${owner}/${repoName}`);
-        try {
-            await convertGitToBruv(gitPath);
-            return gitPath; // Now has .bruv/ too
-        } catch (e) {
-            console.error(`[git-to-bruv] Auto-conversion failed: ${e.message}`);
-            return null;
+    if (fs.existsSync(gitPath)) {
+        if (isBruvRepo(gitPath)) {
+            return gitPath; // converted (git data may be stripped)
+        }
+        if (isBareGitRepo(gitPath)) {
+            console.log(`[git-to-bruv] Auto-converting legacy git repo: ${owner}/${repoName}`);
+            try {
+                await convertGitToBruv(gitPath);
+                return gitPath; // Now has .bruv/ too
+            } catch (e) {
+                console.error(`[git-to-bruv] Auto-conversion failed: ${e.message}`);
+                return null;
+            }
         }
     }
 
@@ -535,6 +571,7 @@ module.exports = {
     checkoutBruvToDir,
     autoConvertExisting,
     resolveRepoPath,
+    stripGitData,
     // Legacy helpers re-exported from bruv library
     writeBruvObject,
     writeBruvTree,
